@@ -31,12 +31,22 @@ std::string square_name(int square) {
     return {file, rank};
 }
 
-const char* promotion_name(uint8_t promoted) {
-    switch (promoted) {
-        case 0: return "knight";
-        case 1: return "bishop";
-        case 2: return "rook";
-        case 3: return "queen";
+const char* move_flag_name(uint8_t flag) {
+    switch (static_cast<MOVE_FLAG>(flag)) {
+        case MOVE_FLAG::QUIET: return "quiet";
+        case MOVE_FLAG::DBL_P_PUSH: return "double pawn push";
+        case MOVE_FLAG::K_CSTL: return "king castle";
+        case MOVE_FLAG::Q_CSTL: return "queen castle";
+        case MOVE_FLAG::CAPTURE: return "capture";
+        case MOVE_FLAG::EP_CAPTURE: return "en passant";
+        case MOVE_FLAG::KNIGHT_PROMO: return "promotion=knight";
+        case MOVE_FLAG::BISHOP_PROMO: return "promotion=bishop";
+        case MOVE_FLAG::ROOK_PROMO: return "promotion=rook";
+        case MOVE_FLAG::QUEEN_PROMO: return "promotion=queen";
+        case MOVE_FLAG::KNIGHT_PROMO_CAPTURE: return "capture promotion=knight";
+        case MOVE_FLAG::BISHOP_PROMO_CAPTURE: return "capture promotion=bishop";
+        case MOVE_FLAG::ROOK_PROMO_CAPTURE: return "capture promotion=rook";
+        case MOVE_FLAG::QUEEN_PROMO_CAPTURE: return "capture promotion=queen";
         default: return "unknown";
     }
 }
@@ -56,12 +66,9 @@ void print_pawn_moves(Position& pos, PIECE_C color, const char* label) {
             << "  (" << static_cast<int>(from)
             << " -> " << static_cast<int>(to) << ")";
 
-        if (move.get_flags() == static_cast<int>(PAWN_FLAG::PROMOTION)) {
-            std::cout
-                << " promotion="
-                << promotion_name(move.get_promoted());
-        } else if (move.get_flags() == static_cast<int>(PAWN_FLAG::EN_PAS)) {
-            std::cout << " en passant";
+        const uint8_t flag = move.get_flags();
+        if (flag != static_cast<uint8_t>(MOVE_FLAG::QUIET)) {
+            std::cout << " " << move_flag_name(flag);
         }
 
         std::cout << '\n';
