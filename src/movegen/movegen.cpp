@@ -1,4 +1,5 @@
 #include "movegen.h"
+#include "board/board.h"
 #include "move/move.h"
 #include <cstdint>
 #include <vector>
@@ -100,9 +101,26 @@ void Movegen::generate_pawn_moves(Position& pos, PIECE_C color, std::vector<Move
     }
 }
 
+uint8_t distance_from_files(uint8_t to, uint8_t from) {
+    return std::abs(to - from);
+}
+
+uint8_t distance_from_ranks(uint8_t to, uint8_t from) {
+    return std::abs(to - from);
+}
+
+bool knight_guard(uint8_t sq, uint8_t to_sq) {
+    if((distance_from_files(sq % 8, to_sq % 8) == 2 && (distance_from_ranks(sq / 8, to_sq / 8) == 1))
+            || (distance_from_files(sq % 8, to_sq % 8) == 1 && (distance_from_ranks(sq / 8, to_sq / 8) == 2))) {
+        return 1;
+    } else {
+        return 0;
+    }
+}
+
 void Movegen::generate_knight_moves(Position& pos, PIECE_C color, std::vector<Move>& moves) {
     auto bitboard = pos.pieces.get_pieces(color, PIECE_T::KNIGHT);
-    auto empty = ~pos.pieces.get_both_pieces();
+    auto empty_bb = ~pos.pieces.get_both_pieces();
     auto enemy = color == PIECE_C::WHITE ? PIECE_C::BLACK: PIECE_C::WHITE;
     auto enemy_bb = pos.pieces.get_colored_pieces(enemy);
 
@@ -112,8 +130,21 @@ void Movegen::generate_knight_moves(Position& pos, PIECE_C color, std::vector<Mo
         uint64_t from_bb = static_cast<uint64_t>(1) << sq;
 
         if(color == PIECE_C::WHITE) {
-
+            for(int i = 0; i < 8; i++) {
+                uint8_t to_sq = sq + KNIGHT_OFFSETS[i];
+                if(to_sq < 0 || to_sq > 63) continue;
+                if(!knight_guard(sq, to_sq)) continue;
+                
+                uint64_t to_bb = static_cast<uint64_t>(1) << to_sq;
+                if(to_bb & empty_bb) {
+                    moves.push_back(Move::encode(sq, to_sq, MOVE_FLAG::QUIET));
+                }
+                if(to_bb & enemy_bb) {
+                    moves.push_back(Move::encode(sq, to_sq, MOVE_FLAG::CAPTURE));
+                }
+            }
         } else {
+
         }
 
     }

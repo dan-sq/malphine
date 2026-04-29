@@ -19,9 +19,9 @@ void debug_bitboard(uint64_t bitboard) {
     }
 }
 
-void print_pawns(Position& pos, PIECE_C color, const char* label) {
-    std::cout << label << " PAWNS\n\n";
-    debug_bitboard(pos.pieces.get_pieces(color, PIECE_T::PAWN));
+void print_knights(Position& pos, PIECE_C color, const char* label) {
+    std::cout << label << " KNIGHTS\n\n";
+    debug_bitboard(pos.pieces.get_pieces(color, PIECE_T::KNIGHT));
     std::cout << '\n';
 }
 std::string square_name(int square) {
@@ -51,9 +51,9 @@ const char* move_flag_name(uint8_t flag) {
     }
 }
 
-void print_pawn_moves(Position& pos, PIECE_C color, const char* label) {
+void print_knight_moves(Position& pos, PIECE_C color, const char* label) {
     std::vector<Move> moves;
-    Movegen::generate_pawn_moves(pos, color, moves);
+    Movegen::generate_knight_moves(pos, color, moves);
 
     std::cout << label << " MOVES (" << moves.size() << ")\n";
 
@@ -79,13 +79,12 @@ void print_pawn_moves(Position& pos, PIECE_C color, const char* label) {
 
 int main() {
     Position pos;
-    std::vector<Move> white_moves, black_moves;
-    auto fen = "8/8/8/3pP3/8/8/8/8 w - d6 0 1";
+    auto fen = "8/8/8/8/8/8/8/N7 w - - 0 1";
     load_fen(pos, fen);
-    print_pawns(pos, PIECE_C::WHITE, "WHITE");
-    print_pawns(pos, PIECE_C::BLACK, "BLACK");
+    print_knights(pos, PIECE_C::WHITE, "WHITE");
+    print_knights(pos, PIECE_C::BLACK, "BLACK");
 
-    print_pawn_moves(pos, PIECE_C::WHITE, "WHITE");
+    print_knight_moves(pos, PIECE_C::WHITE, "WHITE");
 
     return 0;
 }
