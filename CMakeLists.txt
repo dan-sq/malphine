@@ -1,0 +1,6 @@
+cmake_minimum_required(VERSION 4.3.2)
+project(malphine)
+set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+add_executable(main src/main.cpp src/board/board.cpp src/board/fen.cpp src/move/move.cpp src/movegen/movegen.cpp)
+target_include_directories(main PRIVATE ${CMAKE_SOURCE_DIR}/src)
