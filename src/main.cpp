@@ -4,6 +4,11 @@
 #include <iostream>
 #include <cstdint>
 #include <vector>
+#include <bit>
+#include <iomanip>
+#include <set>
+
+std::string square_name(int square);
 
 void debug_bitboard(uint64_t bitboard) {
     for(int rank = 7; rank >= 0; rank--) {
@@ -19,9 +24,81 @@ void debug_bitboard(uint64_t bitboard) {
     }
 }
 
-void print_knights(Position& pos, PIECE_C color, const char* label) {
-    std::cout << label << " KNIGHTS\n\n";
-    debug_bitboard(pos.pieces.get_pieces(color, PIECE_T::KNIGHT));
+uint64_t debug_bishop_blocker_mask(uint8_t sq) {
+    int diagonals[4][2] = {
+        { 1, 1 },
+        { 1, -1 },
+        {-1, 1 },
+        { -1, -1 }
+    };
+
+    uint64_t blocker_mask_bb = 0;
+    for(int i = 0; i < 4; i++) {
+        int file = sq % 8 + diagonals[i][0];
+        int rank = sq / 8 + diagonals[i][1];
+        while((file > 0 && file < 7) && (rank > 0 && rank < 7)) {
+            blocker_mask_bb |= static_cast<uint64_t>(1) << (8 * rank + file);
+            file += diagonals[i][0];
+            rank += diagonals[i][1];
+        }
+    }
+
+    return blocker_mask_bb;
+}
+
+void debug_bishop_magic_helpers(uint8_t sq) {
+    uint64_t blocker_mask_bb = debug_bishop_blocker_mask(sq);
+    auto ones = std::popcount(blocker_mask_bb);
+    uint64_t size = static_cast<uint64_t>(1) << ones;
+
+    std::cout << "DEBUG bishop square: " << square_name(sq)
+              << " (" << static_cast<int>(sq) << ")\n\n";
+
+    std::cout << "blocker_mask_bb, relevant bits = " << ones
+              << ", possible blocker boards = " << size << "\n";
+    debug_bitboard(blocker_mask_bb);
+    std::cout << '\n';
+
+    uint64_t samples[] = {0, 1, 2, 3, size / 2, size - 1};
+    for(uint64_t idx : samples) {
+        if(idx >= size) continue;
+
+        uint64_t blocker_bb = Movegen::bb_from_idx(idx, blocker_mask_bb);
+        uint64_t attack_bb = Movegen::blocked_bishop_attacks(blocker_bb, sq);
+
+        std::cout << "idx " << idx << " blocker_bb\n";
+        debug_bitboard(blocker_bb);
+        std::cout << '\n';
+
+        std::cout << "idx " << idx << " blocked_bishop_attacks\n";
+        debug_bitboard(attack_bb);
+        std::cout << "\n";
+    }
+}
+
+void debug_init_bishop_magics() {
+    std::cout << "Initializing bishop magics...\n" << std::flush;
+    Movegen::init_bishop_magics();
+    std::cout << "Finished initializing bishop magics.\n\n";
+
+    int zero_count = 0;
+    for(int sq = 0; sq < 64; sq++) {
+        uint64_t magic = Movegen::bishop_magics[sq];
+        if(magic == 0) {
+            zero_count++;
+        }
+
+        std::cout << square_name(sq) << " (" << std::setw(2) << sq << ") 0x"
+                  << std::hex << std::setw(16) << std::setfill('0') << magic
+                  << std::dec << std::setfill(' ') << '\n';
+    }
+
+    std::cout << "\nzero magic entries: " << zero_count << "\n\n";
+}
+
+void print_bishop(Position& pos, PIECE_C color, const char* label) {
+    std::cout << label << " BISHOPS\n\n";
+    debug_bitboard(pos.pieces.get_pieces(color, PIECE_T::BISHOP));
     std::cout << '\n';
 }
 std::string square_name(int square) {
@@ -51,9 +128,9 @@ const char* move_flag_name(uint8_t flag) {
     }
 }
 
-void print_knight_moves(Position& pos, PIECE_C color, const char* label) {
+void print_bishop_moves(Position& pos, PIECE_C color, const char* label) {
     std::vector<Move> moves;
-    Movegen::generate_knight_moves(pos, color, moves);
+    Movegen::generate_bishop_moves(pos, color, moves);
 
     std::cout << label << " MOVES (" << moves.size() << ")\n";
 
@@ -77,14 +154,80 @@ void print_knight_moves(Position& pos, PIECE_C color, const char* label) {
     std::cout << '\n';
 }
 
+void debug_bishop_case(
+    const char* label,
+    const std::string& fen,
+    PIECE_C color,
+    const std::set<std::string>& expected_moves
+) {
+    Position pos;
+    load_fen(pos, fen);
+
+    std::vector<Move> moves;
+    Movegen::generate_bishop_moves(pos, color, moves);
+
+    std::set<std::string> actual_moves;
+    for(const auto& move : moves) {
+        std::string move_text = square_name(move.get_from()) + "->" + square_name(move.get_to());
+        if(move.get_flags() == static_cast<uint8_t>(MOVE_FLAG::CAPTURE)) {
+            move_text += "x";
+        }
+        actual_moves.insert(move_text);
+    }
+
+    std::cout << "BISHOP DEBUG: " << label << '\n';
+    std::cout << "FEN: " << fen << '\n';
+    std::cout << "expected (" << expected_moves.size() << ")\n";
+    for(const auto& move : expected_moves) {
+        std::cout << "  " << move << '\n';
+    }
+
+    std::cout << "actual (" << actual_moves.size() << ")\n";
+    for(const auto& move : actual_moves) {
+        std::cout << "  " << move << '\n';
+    }
+
+    bool ok = actual_moves == expected_moves;
+    std::cout << (ok ? "PASS" : "FAIL") << "\n\n";
+}
+
 int main() {
     Position pos;
-    auto fen = "8/8/8/8/8/8/8/N7 w - - 0 1";
+    auto fen = "8/8/8/4B3/8/8/8/8 w - - 0 1";
     load_fen(pos, fen);
-    print_knights(pos, PIECE_C::WHITE, "WHITE");
-    print_knights(pos, PIECE_C::BLACK, "BLACK");
 
-    print_knight_moves(pos, PIECE_C::WHITE, "WHITE");
+    debug_init_bishop_magics();
+    debug_bishop_case(
+        "empty board, bishop on e5",
+        "8/8/8/4B3/8/8/8/8 w - - 0 1",
+        PIECE_C::WHITE,
+        {
+            "e5->a1", "e5->b2", "e5->c3", "e5->d4",
+            "e5->f4", "e5->g3", "e5->h2",
+            "e5->d6", "e5->c7", "e5->b8",
+            "e5->f6", "e5->g7", "e5->h8"
+        }
+    );
+
+    debug_bishop_case(
+        "bishop on e4, own blocker g6, captures c6 and g2",
+        "8/8/2p3P1/8/4B3/8/6p1/8 w - - 0 1",
+        PIECE_C::WHITE,
+        {
+            "e4->d3", "e4->c2", "e4->b1",
+            "e4->f3", "e4->g2x",
+            "e4->d5", "e4->c6x",
+            "e4->f5"
+        }
+    );
+
+    //debug_bishop_magic_helpers(28); // e4
+
+    print_bishop(pos, PIECE_C::WHITE, "WHITE");
+    //print_knights(pos, PIECE_C::BLACK, "BLACK");
+
+    print_bishop_moves(pos, PIECE_C::WHITE, "WHITE");
+    //print_bishop_moves(pos, PIECE_C::BLACK, "BLACK");
 
     return 0;
 }
