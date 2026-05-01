@@ -5,7 +5,6 @@
 #include <cstdint>
 #include <vector>
 #include <bit>
-#include <iomanip>
 #include <set>
 
 std::string square_name(int square);
@@ -59,41 +58,19 @@ void debug_bishop_magic_helpers(uint8_t sq) {
     debug_bitboard(blocker_mask_bb);
     std::cout << '\n';
 
-    uint64_t samples[] = {0, 1, 2, 3, size / 2, size - 1};
-    for(uint64_t idx : samples) {
-        if(idx >= size) continue;
-
-        uint64_t blocker_bb = Movegen::bb_from_idx(idx, blocker_mask_bb);
-        uint64_t attack_bb = Movegen::blocked_bishop_attacks(blocker_bb, sq);
-
-        std::cout << "idx " << idx << " blocker_bb\n";
-        debug_bitboard(blocker_bb);
-        std::cout << '\n';
-
-        std::cout << "idx " << idx << " blocked_bishop_attacks\n";
-        debug_bitboard(attack_bb);
-        std::cout << "\n";
-    }
+    
 }
 
 void debug_init_bishop_magics() {
     std::cout << "Initializing bishop magics...\n" << std::flush;
-    Movegen::init_bishop_magics();
+    Movegen::init_diagonal_cache();
     std::cout << "Finished initializing bishop magics.\n\n";
+}
 
-    int zero_count = 0;
-    for(int sq = 0; sq < 64; sq++) {
-        uint64_t magic = Movegen::bishop_magics[sq];
-        if(magic == 0) {
-            zero_count++;
-        }
-
-        std::cout << square_name(sq) << " (" << std::setw(2) << sq << ") 0x"
-                  << std::hex << std::setw(16) << std::setfill('0') << magic
-                  << std::dec << std::setfill(' ') << '\n';
-    }
-
-    std::cout << "\nzero magic entries: " << zero_count << "\n\n";
+void debug_init_rook_magics() {
+    std::cout << "Initializing rook magics...\n" << std::flush;
+    Movegen::init_horizontal_cache();
+    std::cout << "Finished initializing rook magics.\n\n";
 }
 
 void print_bishop(Position& pos, PIECE_C color, const char* label) {
@@ -167,12 +144,14 @@ void debug_bishop_case(
     Movegen::generate_bishop_moves(pos, color, moves);
 
     std::set<std::string> actual_moves;
+    uint64_t actual_moves_bb = 0;
     for(const auto& move : moves) {
         std::string move_text = square_name(move.get_from()) + "->" + square_name(move.get_to());
         if(move.get_flags() == static_cast<uint8_t>(MOVE_FLAG::CAPTURE)) {
             move_text += "x";
         }
         actual_moves.insert(move_text);
+        actual_moves_bb |= static_cast<uint64_t>(1) << move.get_to();
     }
 
     std::cout << "BISHOP DEBUG: " << label << '\n';
@@ -187,6 +166,51 @@ void debug_bishop_case(
         std::cout << "  " << move << '\n';
     }
 
+    std::cout << "actual move bitboard\n";
+    debug_bitboard(actual_moves_bb);
+
+    bool ok = actual_moves == expected_moves;
+    std::cout << (ok ? "PASS" : "FAIL") << "\n\n";
+}
+
+void debug_rook_case(
+    const char* label,
+    const std::string& fen,
+    PIECE_C color,
+    const std::set<std::string>& expected_moves
+) {
+    Position pos;
+    load_fen(pos, fen);
+
+    std::vector<Move> moves;
+    Movegen::generate_rook_moves(pos, color, moves);
+
+    std::set<std::string> actual_moves;
+    uint64_t actual_moves_bb = 0;
+    for(const auto& move : moves) {
+        std::string move_text = square_name(move.get_from()) + "->" + square_name(move.get_to());
+        if(move.get_flags() == static_cast<uint8_t>(MOVE_FLAG::CAPTURE)) {
+            move_text += "x";
+        }
+        actual_moves.insert(move_text);
+        actual_moves_bb |= static_cast<uint64_t>(1) << move.get_to();
+    }
+
+    std::cout << "ROOK DEBUG: " << label << '\n';
+    std::cout << "FEN: " << fen << '\n';
+    std::cout << "expected (" << expected_moves.size() << ")\n";
+    for(const auto& move : expected_moves) {
+        std::cout << "  " << move << '\n';
+    }
+
+    std::cout << "actual (" << actual_moves.size() << ")\n";
+    for(const auto& move : actual_moves) {
+        std::cout << "  " << move << '\n';
+    }
+
+    std::cout << "actual move bitboard\n";
+    debug_bitboard(actual_moves_bb);
+
     bool ok = actual_moves == expected_moves;
     std::cout << (ok ? "PASS" : "FAIL") << "\n\n";
 }
@@ -197,27 +221,30 @@ int main() {
     load_fen(pos, fen);
 
     debug_init_bishop_magics();
-    debug_bishop_case(
-        "empty board, bishop on e5",
-        "8/8/8/4B3/8/8/8/8 w - - 0 1",
+    debug_init_rook_magics();
+   
+
+    debug_rook_case(
+        "empty board, rook on e5",
+        "8/8/8/4R3/8/8/8/8 w - - 0 1",
         PIECE_C::WHITE,
         {
-            "e5->a1", "e5->b2", "e5->c3", "e5->d4",
-            "e5->f4", "e5->g3", "e5->h2",
-            "e5->d6", "e5->c7", "e5->b8",
-            "e5->f6", "e5->g7", "e5->h8"
+            "e5->e1", "e5->e2", "e5->e3", "e5->e4",
+            "e5->e6", "e5->e7", "e5->e8",
+            "e5->a5", "e5->b5", "e5->c5", "e5->d5",
+            "e5->f5", "e5->g5", "e5->h5"
         }
     );
 
-    debug_bishop_case(
-        "bishop on e4, own blocker g6, captures c6 and g2",
-        "8/8/2p3P1/8/4B3/8/6p1/8 w - - 0 1",
+    debug_rook_case(
+        "rook on e4, own blocker e6 and b4, captures e2 and g4",
+        "8/8/4P3/8/1P2R1p1/8/4p3/8 w - - 0 1",
         PIECE_C::WHITE,
         {
-            "e4->d3", "e4->c2", "e4->b1",
-            "e4->f3", "e4->g2x",
-            "e4->d5", "e4->c6x",
-            "e4->f5"
+            "e4->e3", "e4->e2x",
+            "e4->e5",
+            "e4->c4", "e4->d4",
+            "e4->f4", "e4->g4x"
         }
     );
 
