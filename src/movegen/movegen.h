@@ -19,6 +19,7 @@ namespace Movegen {
     inline HorizontalCache hori_cache = {};
 
     constexpr int KNIGHT_OFFSETS[8] = { 17, 10, -6, -17, -15, -10, 6, 15 };
+    constexpr int KING_OFFSETS[8] = { 7, 8, 9, 1, -7, -8, -9, -1 };
     constexpr auto FILE_A = static_cast<uint64_t>(0x0101010101010101);
     constexpr auto FILE_B = static_cast<uint64_t>(0x0404040404040404);
     constexpr auto FILE_G = static_cast<uint64_t>(0x7070707070707070);

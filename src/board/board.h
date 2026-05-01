@@ -40,6 +40,7 @@ class Position {
         void set_piece(PIECE_C color, PIECE_T type, int square);
         void set_side(PIECE_C s);
         void set_castle(uint8_t cstl);
+        uint8_t get_castle();
         void set_en_pas(uint8_t ep);
         uint8_t get_en_pas() const;
         void set_half_ply(uint8_t hp);

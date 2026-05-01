@@ -53,7 +53,10 @@ uint64_t Magics::sq_to_hori_move_bb(uint8_t sq) {
     for(int i = 0; i < 4; i++) {
         int file = sq % 8 + horizontals[i][0];
         int rank = sq / 8 + horizontals[i][1];
-        while((file > 0 && file < 7) && (rank > 0 && rank < 7)) {
+        while((file > -1 && file < 8) && (rank > -1 && rank < 8)) {
+            if(file + horizontals[i][0] < 0 || file + horizontals[i][0] >= 8 || rank + horizontals[i][1] < 0 || rank + horizontals[i][1] >= 8) {
+                  break;
+            }
             blocker_mask_bb |= static_cast<uint64_t>(1) << (8 * rank + file);
             file += horizontals[i][0];
             rank += horizontals[i][1];

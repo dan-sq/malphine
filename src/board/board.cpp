@@ -9,6 +9,10 @@ void Position::set_castle(uint8_t cstl) {
     this->castle = cstl;
 }
 
+uint8_t Position::get_castle() {
+    return this->castle;
+}
+
 void Position::set_en_pas(uint8_t ep) {
     this->en_pas = ep;
 }
