@@ -48,7 +48,7 @@ bool king_guard(uint8_t sq, uint8_t to_sq) {
       return file_diff <= 1 && rank_diff <= 1 && (file_diff != 0 || rank_diff != 0);
 }
 
-bool is_sq_attacked_by_color(Position& pos, uint8_t sq, PIECE_C color) {
+bool Movegen::is_sq_attacked_by_color(Position& pos, uint8_t sq, PIECE_C color) {
     auto sq_bb = static_cast<uint64_t>(1) << sq;
     auto occupancy_bb = pos.pieces.get_both_pieces();
     auto pawns_bb = pos.pieces.get_pieces(color, PIECE_T::PAWN);
@@ -101,7 +101,7 @@ bool is_sq_attacked_by_color(Position& pos, uint8_t sq, PIECE_C color) {
         queens_bb &= queens_bb - 1;
         auto diag_blocker_bb = occupancy_bb & Movegen::diag_cache.masks[from_sq];
         auto hori_blocker_bb = occupancy_bb & Movegen::hori_cache.masks[from_sq];
-        auto diag_magic_idx = (hori_blocker_bb * Movegen::Constants::DIAGONAL_MAGICS[from_sq]) >> Movegen::diag_cache.shifts[from_sq];
+        auto diag_magic_idx = (diag_blocker_bb * Movegen::Constants::DIAGONAL_MAGICS[from_sq]) >> Movegen::diag_cache.shifts[from_sq];
         auto hori_magic_idx = (hori_blocker_bb * Movegen::Constants::HORIZONTAL_MAGICS[from_sq]) >> Movegen::hori_cache.shifts[from_sq];
         auto attack_bb = Movegen::diag_cache.moves[from_sq][diag_magic_idx] | Movegen::hori_cache.moves[from_sq][hori_magic_idx];
         if(attack_bb & sq_bb) return true;
@@ -157,83 +157,91 @@ void Movegen::generate_pawn_moves(Position& pos, PIECE_C color, std::vector<Move
             auto push_bb = from_bb << 8;
             auto left_blocker_mask_bb = (from_bb & ~FILE_A) << 7;
             auto right_blocker_mask_bb = (from_bb & ~FILE_H) << 9;
-            if(push_bb & empty) {
-                moves.push_back(Move::encode(sq, sq + 8, MOVE_FLAG::QUIET)); 
 
-                if((from_bb & rank2) && ((push_bb << 8) & empty)) {
-                    moves.push_back(Move::encode(sq, sq + 16, MOVE_FLAG::DBL_P_PUSH));
+            if(from_bb & rank7) {
+                if(push_bb & empty) {
+                    moves.push_back(Move::encode(sq, sq + 8, MOVE_FLAG::KNIGHT_PROMO));
+                    moves.push_back(Move::encode(sq, sq + 8, MOVE_FLAG::BISHOP_PROMO));
+                    moves.push_back(Move::encode(sq, sq + 8, MOVE_FLAG::ROOK_PROMO));
+                    moves.push_back(Move::encode(sq, sq + 8, MOVE_FLAG::QUEEN_PROMO));
                 }
-            }
-            if(left_blocker_mask_bb & enemy_bb) {
-                moves.push_back(Move::encode(sq, sq + 7, MOVE_FLAG::CAPTURE));
-            }
-            if(right_blocker_mask_bb & enemy_bb) {
-                moves.push_back(Move::encode(sq, sq + 9, MOVE_FLAG::CAPTURE));
-            }
-            if(left_blocker_mask_bb & en_pas_bb) {
-                moves.push_back(Move::encode(sq, sq + 7, MOVE_FLAG::EP_CAPTURE));
-            }
-            if(right_blocker_mask_bb & en_pas_bb) {
-                moves.push_back(Move::encode(sq, sq + 9, MOVE_FLAG::EP_CAPTURE));
-            }
-            if(from_bb & rank7 && push_bb & empty) {
-                moves.push_back(Move::encode(sq, sq + 8, MOVE_FLAG::KNIGHT_PROMO));
-                moves.push_back(Move::encode(sq, sq + 8, MOVE_FLAG::BISHOP_PROMO));
-                moves.push_back(Move::encode(sq, sq + 8, MOVE_FLAG::ROOK_PROMO));
-                moves.push_back(Move::encode(sq, sq + 8, MOVE_FLAG::QUEEN_PROMO));
-            }
-            if(from_bb & rank7 && left_blocker_mask_bb & enemy_bb) {
-                moves.push_back(Move::encode(sq, sq + 7, MOVE_FLAG::KNIGHT_PROMO_CAPTURE));
-                moves.push_back(Move::encode(sq, sq + 7, MOVE_FLAG::BISHOP_PROMO_CAPTURE));
-                moves.push_back(Move::encode(sq, sq + 7, MOVE_FLAG::ROOK_PROMO_CAPTURE));
-                moves.push_back(Move::encode(sq, sq + 7, MOVE_FLAG::QUEEN_PROMO_CAPTURE));
-            }
-            if(from_bb & rank7 && right_blocker_mask_bb & enemy_bb) {
-                moves.push_back(Move::encode(sq, sq + 9, MOVE_FLAG::KNIGHT_PROMO_CAPTURE));
-                moves.push_back(Move::encode(sq, sq + 9, MOVE_FLAG::BISHOP_PROMO_CAPTURE));
-                moves.push_back(Move::encode(sq, sq + 9, MOVE_FLAG::ROOK_PROMO_CAPTURE));
-                moves.push_back(Move::encode(sq, sq + 9, MOVE_FLAG::QUEEN_PROMO_CAPTURE));
+                if(left_blocker_mask_bb & enemy_bb) {
+                    moves.push_back(Move::encode(sq, sq + 7, MOVE_FLAG::KNIGHT_PROMO_CAPTURE));
+                    moves.push_back(Move::encode(sq, sq + 7, MOVE_FLAG::BISHOP_PROMO_CAPTURE));
+                    moves.push_back(Move::encode(sq, sq + 7, MOVE_FLAG::ROOK_PROMO_CAPTURE));
+                    moves.push_back(Move::encode(sq, sq + 7, MOVE_FLAG::QUEEN_PROMO_CAPTURE));
+                }
+                if(right_blocker_mask_bb & enemy_bb) {
+                    moves.push_back(Move::encode(sq, sq + 9, MOVE_FLAG::KNIGHT_PROMO_CAPTURE));
+                    moves.push_back(Move::encode(sq, sq + 9, MOVE_FLAG::BISHOP_PROMO_CAPTURE));
+                    moves.push_back(Move::encode(sq, sq + 9, MOVE_FLAG::ROOK_PROMO_CAPTURE));
+                    moves.push_back(Move::encode(sq, sq + 9, MOVE_FLAG::QUEEN_PROMO_CAPTURE));
+                }
+            } else {
+                if(push_bb & empty) {
+                    moves.push_back(Move::encode(sq, sq + 8, MOVE_FLAG::QUIET));
+                    if((from_bb & rank2) && ((push_bb << 8) & empty)) {
+                        moves.push_back(Move::encode(sq, sq + 16, MOVE_FLAG::DBL_P_PUSH));
+                    }
+                }
+
+                if(left_blocker_mask_bb & enemy_bb) {
+                    moves.push_back(Move::encode(sq, sq + 7, MOVE_FLAG::CAPTURE));
+                }
+                if(right_blocker_mask_bb & enemy_bb) {
+                    moves.push_back(Move::encode(sq, sq + 9, MOVE_FLAG::CAPTURE));
+                }
+                if(left_blocker_mask_bb & en_pas_bb) {
+                    moves.push_back(Move::encode(sq, sq + 7, MOVE_FLAG::EP_CAPTURE));
+                }
+                if(right_blocker_mask_bb & en_pas_bb) {
+                    moves.push_back(Move::encode(sq, sq + 9, MOVE_FLAG::EP_CAPTURE));
+                }
             }
         } else {
             auto push_bb = from_bb >> 8;
             auto left_blocked_mask_bb = (from_bb & ~FILE_H) >> 7;
             auto right_blocked_mask_bb = (from_bb & ~FILE_A) >> 9;
-            if(push_bb & empty) {
-                moves.push_back(Move::encode(sq, sq - 8, MOVE_FLAG::QUIET)); 
 
-                if((from_bb & rank2) && ((push_bb >> 8) & empty)) {
-                    moves.push_back(Move::encode(sq, sq - 16, MOVE_FLAG::DBL_P_PUSH));
+            if(from_bb & rank2) {
+                if(push_bb & empty) {
+                    moves.push_back(Move::encode(sq, sq - 8, MOVE_FLAG::KNIGHT_PROMO));
+                    moves.push_back(Move::encode(sq, sq - 8, MOVE_FLAG::BISHOP_PROMO));
+                    moves.push_back(Move::encode(sq, sq - 8, MOVE_FLAG::ROOK_PROMO));
+                    moves.push_back(Move::encode(sq, sq - 8, MOVE_FLAG::QUEEN_PROMO));
                 }
-            }
-            if(left_blocked_mask_bb & enemy_bb) {
-                moves.push_back(Move::encode(sq, sq - 7, MOVE_FLAG::CAPTURE));
-            }
-            if(right_blocked_mask_bb & enemy_bb) {
-                moves.push_back(Move::encode(sq, sq - 9, MOVE_FLAG::CAPTURE));
-            }
-            if(left_blocked_mask_bb & en_pas_bb) {
-                moves.push_back(Move::encode(sq, sq - 7, MOVE_FLAG::EP_CAPTURE));
-            }
-            if(right_blocked_mask_bb & en_pas_bb) {
-                moves.push_back(Move::encode(sq, sq - 9, MOVE_FLAG::EP_CAPTURE));
-            }
-            if(from_bb & rank2 && push_bb & empty) {
-                moves.push_back(Move::encode(sq, sq - 8, MOVE_FLAG::KNIGHT_PROMO));
-                moves.push_back(Move::encode(sq, sq - 8, MOVE_FLAG::BISHOP_PROMO));
-                moves.push_back(Move::encode(sq, sq - 8, MOVE_FLAG::ROOK_PROMO));
-                moves.push_back(Move::encode(sq, sq - 8, MOVE_FLAG::QUEEN_PROMO));
-            }
-            if(from_bb & rank2 && left_blocked_mask_bb & enemy_bb) {
-                moves.push_back(Move::encode(sq, sq - 7, MOVE_FLAG::KNIGHT_PROMO_CAPTURE));
-                moves.push_back(Move::encode(sq, sq - 7, MOVE_FLAG::BISHOP_PROMO_CAPTURE));
-                moves.push_back(Move::encode(sq, sq - 7, MOVE_FLAG::ROOK_PROMO_CAPTURE));
-                moves.push_back(Move::encode(sq, sq - 7, MOVE_FLAG::QUEEN_PROMO_CAPTURE));
-            }
-            if(from_bb & rank2 && right_blocked_mask_bb & enemy_bb) {
-                moves.push_back(Move::encode(sq, sq - 9, MOVE_FLAG::KNIGHT_PROMO_CAPTURE));
-                moves.push_back(Move::encode(sq, sq - 9, MOVE_FLAG::BISHOP_PROMO_CAPTURE));
-                moves.push_back(Move::encode(sq, sq - 9, MOVE_FLAG::ROOK_PROMO_CAPTURE));
-                moves.push_back(Move::encode(sq, sq - 9, MOVE_FLAG::QUEEN_PROMO_CAPTURE));
+                if(left_blocked_mask_bb & enemy_bb) {
+                    moves.push_back(Move::encode(sq, sq - 7, MOVE_FLAG::KNIGHT_PROMO_CAPTURE));
+                    moves.push_back(Move::encode(sq, sq - 7, MOVE_FLAG::BISHOP_PROMO_CAPTURE));
+                    moves.push_back(Move::encode(sq, sq - 7, MOVE_FLAG::ROOK_PROMO_CAPTURE));
+                    moves.push_back(Move::encode(sq, sq - 7, MOVE_FLAG::QUEEN_PROMO_CAPTURE));
+                }
+                if(right_blocked_mask_bb & enemy_bb) {
+                    moves.push_back(Move::encode(sq, sq - 9, MOVE_FLAG::KNIGHT_PROMO_CAPTURE));
+                    moves.push_back(Move::encode(sq, sq - 9, MOVE_FLAG::BISHOP_PROMO_CAPTURE));
+                    moves.push_back(Move::encode(sq, sq - 9, MOVE_FLAG::ROOK_PROMO_CAPTURE));
+                    moves.push_back(Move::encode(sq, sq - 9, MOVE_FLAG::QUEEN_PROMO_CAPTURE));
+                }
+            } else {
+                if(push_bb & empty) {
+                    moves.push_back(Move::encode(sq, sq - 8, MOVE_FLAG::QUIET)); 
+
+                    if((from_bb & rank7) && ((push_bb >> 8) & empty)) {
+                        moves.push_back(Move::encode(sq, sq - 16, MOVE_FLAG::DBL_P_PUSH));
+                    }
+                }
+                if(left_blocked_mask_bb & enemy_bb) {
+                    moves.push_back(Move::encode(sq, sq - 7, MOVE_FLAG::CAPTURE));
+                }
+                if(right_blocked_mask_bb & enemy_bb) {
+                    moves.push_back(Move::encode(sq, sq - 9, MOVE_FLAG::CAPTURE));
+                }
+                if(left_blocked_mask_bb & en_pas_bb) {
+                    moves.push_back(Move::encode(sq, sq - 7, MOVE_FLAG::EP_CAPTURE));
+                }
+                if(right_blocked_mask_bb & en_pas_bb) {
+                    moves.push_back(Move::encode(sq, sq - 9, MOVE_FLAG::EP_CAPTURE));
+                }
             }
         }
     }
@@ -248,7 +256,6 @@ void Movegen::generate_knight_moves(Position& pos, PIECE_C color, std::vector<Mo
     while(bitboard) {
         int sq = std::countr_zero(bitboard);
         bitboard &= bitboard - 1;
-        uint64_t from_bb = static_cast<uint64_t>(1) << sq;
 
         for(auto off : KNIGHT_OFFSETS) {
             int to_sq = sq + off;
@@ -275,7 +282,6 @@ void Movegen::generate_bishop_moves(Position& pos, PIECE_C color, std::vector<Mo
     while(bitboard) {
         int sq = std::countr_zero(bitboard);
         bitboard &= bitboard - 1;
-        uint64_t from_bb = static_cast<uint64_t>(1) << sq;
         auto blocker_bb = occupancy_bb & diag_cache.masks[sq];
         auto magic_idx = (blocker_bb * Movegen::Constants::DIAGONAL_MAGICS[sq]) >> diag_cache.shifts[sq];
         auto attack_bb = diag_cache.moves[sq][magic_idx];
@@ -334,7 +340,6 @@ void Movegen::generate_queen_moves(Position& pos, PIECE_C color, std::vector<Mov
     while(bitboard) {
         int sq = std::countr_zero(bitboard);
         bitboard &= bitboard - 1;
-        uint64_t from_bb = static_cast<uint64_t>(1) << sq;
         auto diag_blocker_bb = occupancy_bb & diag_cache.masks[sq];
         auto hori_blocker_bb = occupancy_bb & hori_cache.masks[sq];
         auto diag_magic_idx = (diag_blocker_bb * Movegen::Constants::DIAGONAL_MAGICS[sq]) >> diag_cache.shifts[sq];
@@ -362,40 +367,52 @@ void Movegen::generate_king_moves(Position& pos, PIECE_C color, std::vector<Move
     auto enemy = color == PIECE_C::WHITE ? PIECE_C::BLACK : PIECE_C::WHITE;
     auto enemy_bb = pos.pieces.get_colored_pieces(enemy);
     auto cstl_flag = pos.get_castle();
-    if(cstl_flag & static_cast<uint8_t>(CASTLE_PERM::WKC)) {
-        auto cstl_mask_bb = static_cast<uint64_t>(1) << 5 | static_cast<uint64_t>(1) << 6;
-        if(!is_sq_attacked_by_color(pos, 4, PIECE_C::BLACK)
-                && !is_sq_attacked_by_color(pos, 5, PIECE_C::BLACK)
-                && !is_sq_attacked_by_color(pos, 6, PIECE_C::BLACK)
-                && (cstl_mask_bb & empty_bb) == cstl_mask_bb) {
-            moves.push_back(Move::encode(4, 6, MOVE_FLAG::K_CSTL));
+    auto rooks_bb = pos.pieces.get_pieces(color, PIECE_T::ROOK);
+    if(color == PIECE_C::WHITE) {
+        if(cstl_flag & static_cast<uint8_t>(CASTLE_PERM::WKC)) {
+            auto cstl_mask_bb = static_cast<uint64_t>(1) << 5 | static_cast<uint64_t>(1) << 6;
+            if(!is_sq_attacked_by_color(pos, 4, PIECE_C::BLACK)
+                    && !is_sq_attacked_by_color(pos, 5, PIECE_C::BLACK)
+                    && !is_sq_attacked_by_color(pos, 6, PIECE_C::BLACK)
+                    && (cstl_mask_bb & empty_bb) == cstl_mask_bb
+                    && (bitboard & static_cast<uint64_t>(1) << 4)
+                    && (rooks_bb & static_cast<uint64_t>(1) << 7)) {
+                        moves.push_back(Move::encode(4, 6, MOVE_FLAG::K_CSTL));
+            }
         }
-    }
-    if(cstl_flag & static_cast<uint8_t>(CASTLE_PERM::WQC)) {
-        auto cstl_mask_bb = static_cast<uint64_t>(1) << 3 | static_cast<uint64_t>(1) << 2;
-        if(!is_sq_attacked_by_color(pos, 4, PIECE_C::BLACK)
-                && !is_sq_attacked_by_color(pos, 3, PIECE_C::BLACK)
-                && !is_sq_attacked_by_color(pos, 2, PIECE_C::BLACK)
-                && (cstl_mask_bb & empty_bb) == cstl_mask_bb) {
-            moves.push_back(Move::encode(4, 2, MOVE_FLAG::Q_CSTL));
+        if(cstl_flag & static_cast<uint8_t>(CASTLE_PERM::WQC)) {
+            auto cstl_mask_bb = static_cast<uint64_t>(1) << 1 | static_cast<uint64_t>(1) << 2 | static_cast<uint64_t>(1) << 3;
+            if(!is_sq_attacked_by_color(pos, 4, PIECE_C::BLACK)
+                    && !is_sq_attacked_by_color(pos, 3, PIECE_C::BLACK)
+                    && !is_sq_attacked_by_color(pos, 2, PIECE_C::BLACK)
+                    && (cstl_mask_bb & empty_bb) == cstl_mask_bb
+                    && (bitboard & static_cast<uint64_t>(1) << 4)
+                    && (rooks_bb & 1)) {
+                        moves.push_back(Move::encode(4, 2, MOVE_FLAG::Q_CSTL));
+            }
         }
-    }
-    if(cstl_flag & static_cast<uint8_t>(CASTLE_PERM::BKC)) {
-        auto cstl_mask_bb = static_cast<uint64_t>(1) << 61 | static_cast<uint64_t>(1) << 62;
-        if(!is_sq_attacked_by_color(pos, 60, PIECE_C::WHITE)
-                && !is_sq_attacked_by_color(pos, 61, PIECE_C::WHITE)
-                && !is_sq_attacked_by_color(pos, 62, PIECE_C::WHITE)
-                && (cstl_mask_bb & empty_bb) == cstl_mask_bb) {
-            moves.push_back(Move::encode(60, 62, MOVE_FLAG::K_CSTL));
+    } else {
+        if(cstl_flag & static_cast<uint8_t>(CASTLE_PERM::BKC)) {
+            auto cstl_mask_bb = static_cast<uint64_t>(1) << 61 | static_cast<uint64_t>(1) << 62;
+            if(!is_sq_attacked_by_color(pos, 60, PIECE_C::WHITE)
+                    && !is_sq_attacked_by_color(pos, 61, PIECE_C::WHITE)
+                    && !is_sq_attacked_by_color(pos, 62, PIECE_C::WHITE)
+                    && (cstl_mask_bb & empty_bb) == cstl_mask_bb
+                    && (bitboard & static_cast<uint64_t>(1) << 60)
+                    && (rooks_bb & static_cast<uint64_t>(1) << 63)) {
+                        moves.push_back(Move::encode(60, 62, MOVE_FLAG::K_CSTL));
+            }
         }
-    }
-    if(cstl_flag & static_cast<uint8_t>(CASTLE_PERM::BQC)) {
-        auto cstl_mask_bb = static_cast<uint64_t>(1) << 59 | static_cast<uint64_t>(1) << 58;
-        if(!is_sq_attacked_by_color(pos, 60, PIECE_C::WHITE)
-                && !is_sq_attacked_by_color(pos, 59, PIECE_C::WHITE)
-                && !is_sq_attacked_by_color(pos, 58, PIECE_C::WHITE)
-                && (cstl_mask_bb & empty_bb) == cstl_mask_bb) {
-            moves.push_back(Move::encode(60, 58, MOVE_FLAG::Q_CSTL));
+        if(cstl_flag & static_cast<uint8_t>(CASTLE_PERM::BQC)) {
+            auto cstl_mask_bb = static_cast<uint64_t>(1) << 57 | static_cast<uint64_t>(1) << 58 | static_cast<uint64_t>(1) << 59;
+            if(!is_sq_attacked_by_color(pos, 60, PIECE_C::WHITE)
+                    && !is_sq_attacked_by_color(pos, 59, PIECE_C::WHITE)
+                    && !is_sq_attacked_by_color(pos, 58, PIECE_C::WHITE)
+                    && (cstl_mask_bb & empty_bb) == cstl_mask_bb
+                    && (bitboard & static_cast<uint64_t>(1) << 60)
+                    && (rooks_bb & static_cast<uint64_t>(1) << 56)) {
+                        moves.push_back(Move::encode(60, 58, MOVE_FLAG::Q_CSTL));
+            }
         }
     }
 
@@ -407,7 +424,6 @@ void Movegen::generate_king_moves(Position& pos, PIECE_C color, std::vector<Move
             int to_sq = sq + off;
             if(to_sq < 0 || to_sq > 63) continue;
             if(!king_guard(sq, to_sq)) continue;
-            if(is_sq_attacked_by_color(pos, to_sq, enemy)) continue;
             auto to_bb = static_cast<uint64_t>(1) << to_sq;
 
             if(to_bb & empty_bb) {
@@ -422,7 +438,7 @@ void Movegen::generate_king_moves(Position& pos, PIECE_C color, std::vector<Move
     }
 }
 
-void Movegen::generate_all_moves(Position& pos, PIECE_C color, std::vector<Move>& moves) {
+void Movegen::generate_pseudo_legal_moves(Position& pos, PIECE_C color, std::vector<Move>& moves) {
     generate_pawn_moves(pos, color, moves);
     generate_knight_moves(pos, color, moves);
     generate_bishop_moves(pos, color, moves);
