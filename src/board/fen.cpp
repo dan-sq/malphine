@@ -3,7 +3,7 @@
 #include <ranges>
 #include <unordered_map>
 
-enum class PARSER_STATE { POS, MV, CSTL, EP_SQ, HP, P };
+enum class PARSER_STATE { POS, MV, CSTL, EP_SQ, HM, FM };
 
 void load_fen(Position& pos, const std::string &fen) {
 
@@ -95,18 +95,18 @@ void load_fen(Position& pos, const std::string &fen) {
                 pos.set_en_pas(64);
             }
 
-            state = PARSER_STATE::HP;
+            state = PARSER_STATE::HM;
             break;
-        case PARSER_STATE::HP: {
-            int hp = std::stoi(part);
-            pos.set_half_ply(hp);
+        case PARSER_STATE::HM: {
+            int hm = std::stoi(part);
+            pos.set_half_moves(hm);
 
-            state = PARSER_STATE::P;
+            state = PARSER_STATE::FM;
             break;
         }
-        case PARSER_STATE::P: {
-            int p = std::stoi(part);
-            pos.set_ply(p);
+        case PARSER_STATE::FM: {
+            int fm = std::stoi(part);
+            pos.set_full_moves(fm);
 
             return;
         }

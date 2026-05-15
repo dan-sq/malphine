@@ -38,5 +38,5 @@ namespace Movegen {
     void generate_pseudo_legal_moves(Position& pos, PIECE_C color, std::vector<Move>& moves);
     void generate_legal_moves(Position& pos, PIECE_C color, std::vector<Move>& moves);
     bool make(Position& pos, Move move);
-    void unmake(Position& pos);
+    void unmake(Position& pos, Move move);
 }

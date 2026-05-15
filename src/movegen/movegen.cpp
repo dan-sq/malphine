@@ -377,18 +377,18 @@ void Movegen::generate_king_moves(Position& pos, PIECE_C color, std::vector<Move
                     && (cstl_mask_bb & empty_bb) == cstl_mask_bb
                     && (bitboard & static_cast<uint64_t>(1) << 4)
                     && (rooks_bb & static_cast<uint64_t>(1) << 7)) {
-                        moves.push_back(Move::encode(4, 6, MOVE_FLAG::K_CSTL));
+                moves.push_back(Move::encode(4, 6, MOVE_FLAG::K_CSTL));
             }
         }
         if(cstl_flag & static_cast<uint8_t>(CASTLE_PERM::WQC)) {
-            auto cstl_mask_bb = static_cast<uint64_t>(1) << 1 | static_cast<uint64_t>(1) << 2 | static_cast<uint64_t>(1) << 3;
-            if(!is_sq_attacked_by_color(pos, 4, PIECE_C::BLACK)
+            auto cstl_mask_bb = static_cast<uint64_t>(1) << 3 | static_cast<uint64_t>(1) << 2 | static_cast<uint64_t>(1) << 1;
+                if(!is_sq_attacked_by_color(pos, 4, PIECE_C::BLACK)
                     && !is_sq_attacked_by_color(pos, 3, PIECE_C::BLACK)
                     && !is_sq_attacked_by_color(pos, 2, PIECE_C::BLACK)
                     && (cstl_mask_bb & empty_bb) == cstl_mask_bb
                     && (bitboard & static_cast<uint64_t>(1) << 4)
                     && (rooks_bb & 1)) {
-                        moves.push_back(Move::encode(4, 2, MOVE_FLAG::Q_CSTL));
+                moves.push_back(Move::encode(4, 2, MOVE_FLAG::Q_CSTL));
             }
         }
     } else {
@@ -445,4 +445,525 @@ void Movegen::generate_pseudo_legal_moves(Position& pos, PIECE_C color, std::vec
     generate_rook_moves(pos, color, moves);
     generate_queen_moves(pos, color, moves);
     generate_king_moves(pos, color, moves);
+}
+
+PIECE_T move_flag_to_pt(MOVE_FLAG flag) {
+    switch(flag) {
+        case MOVE_FLAG::KNIGHT_PROMO:
+            return PIECE_T::KNIGHT;
+        case MOVE_FLAG::KNIGHT_PROMO_CAPTURE:
+            return PIECE_T::KNIGHT;
+        case MOVE_FLAG::BISHOP_PROMO:
+            return PIECE_T::BISHOP;
+        case MOVE_FLAG::BISHOP_PROMO_CAPTURE:
+            return PIECE_T::BISHOP;
+        case MOVE_FLAG::ROOK_PROMO:
+            return PIECE_T::ROOK;
+        case MOVE_FLAG::ROOK_PROMO_CAPTURE:
+            return PIECE_T::ROOK;
+        case MOVE_FLAG::QUEEN_PROMO:
+            return PIECE_T::QUEEN;
+        case MOVE_FLAG::QUEEN_PROMO_CAPTURE:
+            return PIECE_T::QUEEN;
+        default:
+            return PIECE_T::NONE;
+    }
+}
+
+bool Movegen::make(Position& pos, Move move) {
+    PIECE_C us = pos.get_side();
+    PIECE_C enemy = us == PIECE_C::WHITE ? PIECE_C::BLACK : PIECE_C::WHITE;
+    auto from_sq = move.get_from();
+    auto to_sq = move.get_to();
+    PIECE_T pt = pos.pieces.get_piece_on(from_sq);
+    auto king_bb = pos.pieces.get_pieces(us, PIECE_T::KING);
+    auto king_sq = std::countr_zero(king_bb);
+
+    bool ep = move.get_flags() == static_cast<int>(MOVE_FLAG::DBL_P_PUSH) ? 1 : 0;
+    auto cstl_perms = pos.get_castle();
+    auto half_moves = pos.get_half_moves();
+
+    Undo undo = {
+        .side = us,
+        .castle = pos.get_castle(),
+        .en_pas = pos.get_en_pas(),
+        .half_moves = half_moves,
+        .ply = pos.get_ply(),
+        .full_moves = pos.get_full_moves()
+    };
+
+    switch(static_cast<MOVE_FLAG>(move.get_flags())) {
+        case MOVE_FLAG::QUIET:
+            pos.pieces.remove_piece(us, pt, from_sq);
+            pos.pieces.set_piece(us, pt, to_sq);
+
+            if(pt == PIECE_T::KING)
+                king_sq = std::countr_zero(pos.pieces.get_pieces(us, pt));
+
+            if(us == PIECE_C::WHITE) {
+                if(pt == PIECE_T::KING && from_sq == 4) cstl_perms &= ~(1 << 0 | 1 << 1);
+
+                if(pt == PIECE_T::ROOK && from_sq == 7) cstl_perms &= ~(1 << 0);
+                if(pt == PIECE_T::ROOK && from_sq == 0) cstl_perms &= ~(1 << 1);
+            } else {
+                if(pt == PIECE_T::KING && from_sq == 60) cstl_perms &= ~(1 << 2 | 1 << 3);
+
+                if(pt == PIECE_T::ROOK && from_sq == 63) cstl_perms &= ~(1 << 2);
+                if(pt == PIECE_T::ROOK && from_sq == 56) cstl_perms &= ~(1 << 3);
+            }
+
+            if(is_sq_attacked_by_color(pos, king_sq, enemy)) {
+                pos.pieces.remove_piece(us, pt, to_sq);
+                pos.pieces.set_piece(us, pt, from_sq);
+
+                return false;
+            }
+
+            if(pt != PIECE_T::PAWN)
+                half_moves++;
+            else
+                half_moves = 0;
+
+            break;
+        case MOVE_FLAG::DBL_P_PUSH:
+            pos.pieces.remove_piece(us, pt, from_sq);
+            pos.pieces.set_piece(us, pt, to_sq);
+
+            if(is_sq_attacked_by_color(pos, king_sq, enemy)) {
+                pos.pieces.remove_piece(us, pt, to_sq);
+                pos.pieces.set_piece(us, pt, from_sq);
+
+                return false;
+            }
+
+            half_moves = 0;
+
+            break;
+        case MOVE_FLAG::K_CSTL:
+            if(us == PIECE_C::WHITE) {
+                pos.pieces.remove_piece(us, pt, from_sq);
+                pos.pieces.set_piece(us, pt, to_sq);
+
+                pos.pieces.remove_piece(us, PIECE_T::ROOK, 7);
+                pos.pieces.set_piece(us, PIECE_T::ROOK, 5);
+                cstl_perms &= ~(1 << 0 | 1 << 1);
+            } else {
+                pos.pieces.remove_piece(us, pt, from_sq);
+                pos.pieces.set_piece(us, pt, to_sq);
+
+                pos.pieces.remove_piece(us, PIECE_T::ROOK, 63);
+                pos.pieces.set_piece(us, PIECE_T::ROOK, 61);
+                cstl_perms &= ~(1 << 2 | 1 << 3);
+            }
+
+            half_moves++;
+
+            break;
+        case MOVE_FLAG::Q_CSTL:
+            if(us == PIECE_C::WHITE) {
+                pos.pieces.remove_piece(us, pt, from_sq);
+                pos.pieces.set_piece(us, pt, to_sq);
+
+                pos.pieces.remove_piece(us, PIECE_T::ROOK, 0);
+                pos.pieces.set_piece(us, PIECE_T::ROOK, 3);
+                cstl_perms &= ~(1 << 0 | 1 << 1);
+            } else {
+                pos.pieces.remove_piece(us, pt, from_sq);
+                pos.pieces.set_piece(us, pt, to_sq);
+
+                pos.pieces.remove_piece(us, PIECE_T::ROOK, 56);
+                pos.pieces.set_piece(us, PIECE_T::ROOK, 59);
+                cstl_perms &= ~(1 << 2 | 1 << 3);
+            }
+
+            half_moves++;
+
+            break;
+        case MOVE_FLAG::CAPTURE:
+        {
+            PIECE_T to_capture = pos.pieces.get_piece_on(to_sq);
+            undo.captured = to_capture;
+            pos.pieces.remove_piece(us, pt, from_sq);
+            pos.pieces.remove_piece(enemy, to_capture, to_sq);
+            pos.pieces.set_piece(us, pt, to_sq);
+            if(pt == PIECE_T::KING)
+                king_sq = std::countr_zero(pos.pieces.get_pieces(us, pt));
+
+            if(us == PIECE_C::WHITE) {
+                if(pt == PIECE_T::KING && from_sq == 4) cstl_perms &= ~(1 << 0 | 1 << 1);
+
+                if(pt == PIECE_T::ROOK && from_sq == 7) cstl_perms &= ~(1 << 0);
+                if(pt == PIECE_T::ROOK && from_sq == 0) cstl_perms &= ~(1 << 1);
+
+                if(to_capture == PIECE_T::ROOK && to_sq == 63) cstl_perms &= ~(1 << 2);
+                if(to_capture == PIECE_T::ROOK && to_sq == 56) cstl_perms &= ~(1 << 3);
+            } else {
+                if(pt == PIECE_T::KING && from_sq == 60) cstl_perms &= ~(1 << 2 | 1 << 3);
+
+                if(pt == PIECE_T::ROOK && from_sq == 63) cstl_perms &= ~(1 << 2);
+                if(pt == PIECE_T::ROOK && from_sq == 56) cstl_perms &= ~(1 << 3);
+
+                if(to_capture == PIECE_T::ROOK && to_sq == 7) cstl_perms &= ~(1 << 0);
+                if(to_capture == PIECE_T::ROOK && to_sq == 0) cstl_perms &= ~(1 << 1);
+            }
+
+            if(is_sq_attacked_by_color(pos, king_sq, enemy)) {
+                pos.pieces.remove_piece(us, pt, to_sq);
+                pos.pieces.set_piece(us, pt, from_sq);
+                pos.pieces.set_piece(enemy, to_capture, to_sq);
+
+                return false;
+            }
+
+            half_moves = 0;
+
+            break;
+        }
+        case MOVE_FLAG::EP_CAPTURE:
+        {
+            PIECE_T to_capture;
+            if(us == PIECE_C::WHITE) {
+                to_capture = pos.pieces.get_piece_on(to_sq - 8);
+            } else {
+                to_capture = pos.pieces.get_piece_on(to_sq + 8);
+            }
+
+            undo.captured = to_capture;
+
+            pos.pieces.remove_piece(us, pt, from_sq);
+            if(us == PIECE_C::WHITE) {
+                pos.pieces.remove_piece(enemy, to_capture, to_sq - 8);
+            } else {
+                pos.pieces.remove_piece(enemy, to_capture, to_sq + 8);
+            }
+
+            pos.pieces.set_piece(us, pt, to_sq);
+
+            if(is_sq_attacked_by_color(pos, king_sq, enemy)) {
+                pos.pieces.remove_piece(us, pt, to_sq);
+                pos.pieces.set_piece(us, pt, from_sq);
+
+                if(us == PIECE_C::WHITE) {
+                    pos.pieces.set_piece(enemy, to_capture, to_sq - 8);
+                } else {
+                    pos.pieces.set_piece(enemy, to_capture, to_sq + 8);
+                }
+
+                return false;
+            }
+
+            half_moves = 0;
+
+            break;
+        }
+        case MOVE_FLAG::KNIGHT_PROMO:
+            pos.pieces.remove_piece(us, pt, from_sq);
+            pos.pieces.set_piece(us, PIECE_T::KNIGHT, to_sq);
+
+            if(is_sq_attacked_by_color(pos, king_sq, enemy)) {
+                pos.pieces.remove_piece(us, PIECE_T::KNIGHT, to_sq);
+                pos.pieces.set_piece(us, pt, from_sq);
+
+                return false;
+            }
+
+            half_moves = 0;
+
+            break;
+        case MOVE_FLAG::BISHOP_PROMO:
+            pos.pieces.remove_piece(us, pt, from_sq);
+            pos.pieces.set_piece(us, PIECE_T::BISHOP, to_sq);
+
+            if(is_sq_attacked_by_color(pos, king_sq, enemy)) {
+                pos.pieces.remove_piece(us, PIECE_T::BISHOP, to_sq);
+                pos.pieces.set_piece(us, pt, from_sq);
+
+                return false;
+            }
+
+            half_moves = 0;
+
+            break;
+        case MOVE_FLAG::ROOK_PROMO:
+            pos.pieces.remove_piece(us, pt, from_sq);
+            pos.pieces.set_piece(us, PIECE_T::ROOK, to_sq);
+
+            if(is_sq_attacked_by_color(pos, king_sq, enemy)) {
+                pos.pieces.remove_piece(us, PIECE_T::ROOK, to_sq);
+                pos.pieces.set_piece(us, pt, from_sq);
+
+                return false;
+            }
+
+            half_moves = 0;
+
+            break;
+        case MOVE_FLAG::QUEEN_PROMO:
+            pos.pieces.remove_piece(us, pt, from_sq);
+            pos.pieces.set_piece(us, PIECE_T::QUEEN, to_sq);
+
+            if(is_sq_attacked_by_color(pos, king_sq, enemy)) {
+                pos.pieces.remove_piece(us, PIECE_T::QUEEN, to_sq);
+                pos.pieces.set_piece(us, pt, from_sq);
+
+                return false;
+            }
+
+            half_moves = 0;
+
+            break;
+        case MOVE_FLAG::KNIGHT_PROMO_CAPTURE:
+        {
+            PIECE_T to_capture = pos.pieces.get_piece_on(to_sq);
+            undo.captured = to_capture;
+            pos.pieces.remove_piece(us, pt, from_sq);
+            pos.pieces.remove_piece(enemy, to_capture, to_sq);
+            pos.pieces.set_piece(us, PIECE_T::KNIGHT, to_sq);
+
+            if(us == PIECE_C::WHITE) {
+                if(to_capture == PIECE_T::ROOK && to_sq == 63) cstl_perms &= ~(1 << 2);
+                if(to_capture == PIECE_T::ROOK && to_sq == 56) cstl_perms &= ~(1 << 3);
+            } else {
+                if(to_capture == PIECE_T::ROOK && to_sq == 7) cstl_perms &= ~(1 << 0);
+                if(to_capture == PIECE_T::ROOK && to_sq == 0) cstl_perms &= ~(1 << 1);
+            }
+
+            if(is_sq_attacked_by_color(pos, king_sq, enemy)) {
+                pos.pieces.remove_piece(us, PIECE_T::KNIGHT, to_sq);
+                pos.pieces.set_piece(enemy, to_capture, to_sq);
+                pos.pieces.set_piece(us, pt, from_sq);
+
+                return false;
+            }
+
+            half_moves = 0;
+
+            break;
+        }
+        case MOVE_FLAG::BISHOP_PROMO_CAPTURE:
+        {
+            PIECE_T to_capture = pos.pieces.get_piece_on(to_sq);
+            undo.captured = to_capture;
+            pos.pieces.remove_piece(us, pt, from_sq);
+            pos.pieces.remove_piece(enemy, to_capture, to_sq);
+            pos.pieces.set_piece(us, PIECE_T::BISHOP, to_sq);
+
+            if(us == PIECE_C::WHITE) {
+                if(to_capture == PIECE_T::ROOK && to_sq == 63) cstl_perms &= ~(1 << 2);
+                if(to_capture == PIECE_T::ROOK && to_sq == 56) cstl_perms &= ~(1 << 3);
+            } else {
+                if(to_capture == PIECE_T::ROOK && to_sq == 7) cstl_perms &= ~(1 << 0);
+                if(to_capture == PIECE_T::ROOK && to_sq == 0) cstl_perms &= ~(1 << 1);
+            }
+
+            if(is_sq_attacked_by_color(pos, king_sq, enemy)) {
+                pos.pieces.remove_piece(us, PIECE_T::BISHOP, to_sq);
+                pos.pieces.set_piece(enemy, to_capture, to_sq);
+                pos.pieces.set_piece(us, pt, from_sq);
+
+                return false;
+            }
+
+            half_moves = 0;
+
+            break;
+        }
+        case MOVE_FLAG::ROOK_PROMO_CAPTURE:
+        {
+            PIECE_T to_capture = pos.pieces.get_piece_on(to_sq);
+            undo.captured = to_capture;
+            pos.pieces.remove_piece(us, pt, from_sq);
+            pos.pieces.remove_piece(enemy, to_capture, to_sq);
+            pos.pieces.set_piece(us, PIECE_T::ROOK, to_sq);
+
+            if(us == PIECE_C::WHITE) {
+                if(to_capture == PIECE_T::ROOK && to_sq == 63) cstl_perms &= ~(1 << 2);
+                if(to_capture == PIECE_T::ROOK && to_sq == 56) cstl_perms &= ~(1 << 3);
+            } else {
+                if(to_capture == PIECE_T::ROOK && to_sq == 7) cstl_perms &= ~(1 << 0);
+                if(to_capture == PIECE_T::ROOK && to_sq == 0) cstl_perms &= ~(1 << 1);
+            }
+
+            if(is_sq_attacked_by_color(pos, king_sq, enemy)) {
+                pos.pieces.remove_piece(us, PIECE_T::ROOK, to_sq);
+                pos.pieces.set_piece(enemy, to_capture, to_sq);
+                pos.pieces.set_piece(us, pt, from_sq);
+
+                return false;
+            }
+
+            half_moves = 0;
+
+            break;
+        }
+        case MOVE_FLAG::QUEEN_PROMO_CAPTURE:
+        {
+            PIECE_T to_capture = pos.pieces.get_piece_on(to_sq);
+            undo.captured = to_capture;
+            pos.pieces.remove_piece(us, pt, from_sq);
+            pos.pieces.remove_piece(enemy, to_capture, to_sq);
+            pos.pieces.set_piece(us, PIECE_T::QUEEN, to_sq);
+
+            if(us == PIECE_C::WHITE) {
+                if(to_capture == PIECE_T::ROOK && to_sq == 63) cstl_perms &= ~(1 << 2);
+                if(to_capture == PIECE_T::ROOK && to_sq == 56) cstl_perms &= ~(1 << 3);
+            } else {
+                if(to_capture == PIECE_T::ROOK && to_sq == 7) cstl_perms &= ~(1 << 0);
+                if(to_capture == PIECE_T::ROOK && to_sq == 0) cstl_perms &= ~(1 << 1);
+            }
+
+            if(is_sq_attacked_by_color(pos, king_sq, enemy)) {
+                pos.pieces.remove_piece(us, PIECE_T::QUEEN, to_sq);
+                pos.pieces.set_piece(enemy, to_capture, to_sq);
+                pos.pieces.set_piece(us, pt, from_sq);
+
+                return false;
+            }
+
+            half_moves = 0;
+
+            break;
+        }
+        default:
+            return false;
+    }
+
+    if(ep) {
+        if(us == PIECE_C::WHITE) {
+            pos.set_en_pas(to_sq - 8);
+        } else {
+            pos.set_en_pas(to_sq + 8);
+        }
+    } else {
+        pos.set_en_pas(64);
+    }
+    if(us == PIECE_C::BLACK) pos.set_full_moves(pos.get_full_moves() + 1);
+    pos.set_ply(pos.get_ply() + 1);
+    pos.set_half_moves(half_moves);
+    pos.set_castle(cstl_perms);
+    pos.append_to_undos(undo);
+    pos.set_side(enemy);
+
+    return true;
+}
+
+void Movegen::unmake(Position& pos, Move move) {
+    Undo undo = pos.fetch_and_pop_undos();
+    pos.set_side(undo.side);
+    pos.set_castle(undo.castle);
+    pos.set_en_pas(undo.en_pas);
+    pos.set_half_moves(undo.half_moves);
+    pos.set_ply(undo.ply);
+    pos.set_full_moves(undo.full_moves);
+
+    PIECE_C us = pos.get_side();
+    PIECE_C enemy = us == PIECE_C::WHITE ? PIECE_C::BLACK : PIECE_C::WHITE;
+    auto from_sq = move.get_from();
+    auto to_sq = move.get_to();
+    PIECE_T pt = pos.pieces.get_piece_on(to_sq);
+    auto king_bb = pos.pieces.get_pieces(us, PIECE_T::KING);
+    auto king_sq = std::countr_zero(king_bb);
+    PIECE_T captured = undo.captured;
+
+    switch(static_cast<MOVE_FLAG>(move.get_flags())) {
+        case MOVE_FLAG::QUIET:
+            pos.pieces.remove_piece(us, pt, to_sq);
+            pos.pieces.set_piece(us, pt, from_sq);
+
+            break;
+        case MOVE_FLAG::DBL_P_PUSH:
+            pos.pieces.remove_piece(us, pt, to_sq);
+            pos.pieces.set_piece(us, pt, from_sq);
+
+            break;
+        case MOVE_FLAG::K_CSTL:
+            pos.pieces.remove_piece(us, pt, to_sq);
+            pos.pieces.set_piece(us, pt, from_sq);
+
+            if(us == PIECE_C::WHITE) {
+                pos.pieces.remove_piece(us, PIECE_T::ROOK, 5);
+                pos.pieces.set_piece(us, PIECE_T::ROOK, 7);
+            } else {
+                pos.pieces.remove_piece(us, PIECE_T::ROOK, 61);
+                pos.pieces.set_piece(us, PIECE_T::ROOK, 63);
+            }
+
+            break;
+        case MOVE_FLAG::Q_CSTL:
+            pos.pieces.remove_piece(us, pt, to_sq);
+            pos.pieces.set_piece(us, pt, from_sq);
+
+            if(us == PIECE_C::WHITE) {
+                pos.pieces.remove_piece(us, PIECE_T::ROOK, 3);
+                pos.pieces.set_piece(us, PIECE_T::ROOK, 0);
+            } else {
+                pos.pieces.remove_piece(us, PIECE_T::ROOK, 59);
+                pos.pieces.set_piece(us, PIECE_T::ROOK, 56);
+            }
+
+            break;
+        case MOVE_FLAG::CAPTURE:
+            pos.pieces.remove_piece(us, pt, to_sq);
+            pos.pieces.set_piece(enemy, captured, to_sq);
+            pos.pieces.set_piece(us, pt, from_sq);
+
+            break;
+        case MOVE_FLAG::EP_CAPTURE:
+            pos.pieces.remove_piece(us, pt, to_sq);
+            if(us == PIECE_C::WHITE) {
+                pos.pieces.set_piece(enemy, captured, to_sq - 8);
+            } else {
+                pos.pieces.set_piece(enemy, captured, to_sq + 8);
+            }
+
+            pos.pieces.set_piece(us, pt, from_sq);
+
+            break;
+        case MOVE_FLAG::KNIGHT_PROMO:
+            pos.pieces.remove_piece(us, pt, to_sq);
+            pos.pieces.set_piece(us, PIECE_T::PAWN, from_sq);
+
+            break;
+        case MOVE_FLAG::BISHOP_PROMO:
+            pos.pieces.remove_piece(us, pt, to_sq);
+            pos.pieces.set_piece(us, PIECE_T::PAWN, from_sq);
+
+            break;
+        case MOVE_FLAG::ROOK_PROMO:
+            pos.pieces.remove_piece(us, pt, to_sq);
+            pos.pieces.set_piece(us, PIECE_T::PAWN, from_sq);
+
+            break;
+        case MOVE_FLAG::QUEEN_PROMO:
+            pos.pieces.remove_piece(us, pt, to_sq);
+            pos.pieces.set_piece(us, PIECE_T::PAWN, from_sq);
+
+            break;
+        case MOVE_FLAG::KNIGHT_PROMO_CAPTURE:
+            pos.pieces.remove_piece(us, pt, to_sq);
+            pos.pieces.set_piece(us, PIECE_T::PAWN, from_sq);
+            pos.pieces.set_piece(enemy, captured, to_sq);
+
+            break;
+        case MOVE_FLAG::BISHOP_PROMO_CAPTURE:
+            pos.pieces.remove_piece(us, pt, to_sq);
+            pos.pieces.set_piece(us, PIECE_T::PAWN, from_sq);
+            pos.pieces.set_piece(enemy, captured, to_sq);
+
+            break;
+        case MOVE_FLAG::ROOK_PROMO_CAPTURE:
+            pos.pieces.remove_piece(us, pt, to_sq);
+            pos.pieces.set_piece(us, PIECE_T::PAWN, from_sq);
+            pos.pieces.set_piece(enemy, captured, to_sq);
+
+            break;
+        case MOVE_FLAG::QUEEN_PROMO_CAPTURE:
+            pos.pieces.remove_piece(us, pt, to_sq);
+            pos.pieces.set_piece(us, PIECE_T::PAWN, from_sq);
+            pos.pieces.set_piece(enemy, captured, to_sq);
+
+            break;
+        default:
+            break;
+    }
 }

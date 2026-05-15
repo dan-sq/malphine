@@ -21,5 +21,5 @@ class Move {
         uint8_t get_flags() const;
         static Move encode(uint8_t from, uint8_t to, MOVE_FLAG flags);
         static Move null() { return Move(0); }
-        bool is_null() const { return move == 0; }
+        bool is_null() const { return this->move == 0; }
 };
