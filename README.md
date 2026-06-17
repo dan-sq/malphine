@@ -14,7 +14,8 @@
     2. Integrating with lichess-bot:
     $ git clone https://github.com/lichess-bot-devs/lichess-bot
     $ cd lichess-bot
-    Install requirements for lichess-bot. (I made a venv and installed via: $ python3 -m pip install -r requirements.txt)
+    Install requirements for lichess-bot.
+    (I made a venv and installed via: $ python3 -m pip install -r requirements.txt)
     $ cp config.yml.default config.yml
     Configure config.yml, engine currently only supports uci with no options except go depth N.
     Finally, create a .env file in /malphine and add LICHESS_BOT_TOKEN="Your Token"
