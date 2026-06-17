@@ -11,6 +11,9 @@ add_executable(main
     src/move/move.cpp
     src/movegen/movegen.cpp
     src/tools/magics.cpp
+    src/evaluate/evaluate.cpp
+    src/search/search.cpp
+    src/uci/uci.cpp
 )
 add_executable(magics_generator
     src/tools/magics_generator.cpp

@@ -36,7 +36,7 @@ namespace Movegen {
     void generate_queen_moves(Position& pos, PIECE_C color, std::vector<Move>& moves);
     void generate_king_moves(Position& pos, PIECE_C color, std::vector<Move>& moves);
     void generate_pseudo_legal_moves(Position& pos, PIECE_C color, std::vector<Move>& moves);
-    void generate_legal_moves(Position& pos, PIECE_C color, std::vector<Move>& moves);
     bool make(Position& pos, Move move);
     void unmake(Position& pos, Move move);
+    uint64_t perft(Position& pos, uint64_t depth);
 }

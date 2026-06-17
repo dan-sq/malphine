@@ -5,7 +5,6 @@
 #include "movegen/magic_constants.h"
 #include <cstdint>
 #include <vector>
-#include <bit>
 
 void Movegen::init_diagonal_cache() {
     for(int sq = 0; sq < 64; sq++) {
@@ -445,6 +444,23 @@ void Movegen::generate_pseudo_legal_moves(Position& pos, PIECE_C color, std::vec
     generate_rook_moves(pos, color, moves);
     generate_queen_moves(pos, color, moves);
     generate_king_moves(pos, color, moves);
+}
+
+uint64_t Movegen::perft(Position& pos, uint64_t depth) {
+    uint64_t nodes = 0;
+    if(depth == 0) return static_cast<uint64_t>(1);
+
+    std::vector<Move> moves;
+    generate_pseudo_legal_moves(pos, pos.get_side(), moves);
+
+    for(auto& move : moves) {
+        if(make(pos, move)) {
+            nodes += perft(pos, depth - 1);
+            unmake(pos, move);
+        }
+    }
+
+    return nodes;
 }
 
 PIECE_T move_flag_to_pt(MOVE_FLAG flag) {
