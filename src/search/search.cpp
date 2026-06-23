@@ -4,6 +4,10 @@
 #include "movegen/movegen.h"
 #include "evaluate/evaluate.h"
 #include <vector>
+#include <chrono>
+#include <thread>
+#include <atomic>
+#include <mutex>
 
 bool is_capture(Move move) {
     auto flag = static_cast<MOVE_FLAG>(move.get_flags());
@@ -15,32 +19,79 @@ bool is_capture(Move move) {
         || flag == MOVE_FLAG::QUEEN_PROMO_CAPTURE;
 }
 
-Move Search::search(Position& pos, int depth) {
+Move Search::search(Position& pos, int time_ms) {
     Move best_move = Move::null();
+    Timer timer = {
+        .deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(time_ms),
+    };
 
+    int stable_move_count = 0;
     std::vector<Move> moves;
     Movegen::generate_pseudo_legal_moves(pos, pos.get_side(), moves);
 
-    int best_score = -SEARCH_BOUND;
+    const size_t n = moves.size();
+    std::mutex mtx;
 
-    for(auto& move : moves) {
-        if(!Movegen::make(pos, move))
-            continue;
+    for(int depth = 1; depth <= DEPTH_MAX && !timer.stop; depth++) {
+        int best_score = -SEARCH_BOUND;
+        Move current_best_move = Move::null();
+        std::atomic<size_t> move_idx = 0;
 
-        int score = -alphaBeta(pos, -SEARCH_BOUND, SEARCH_BOUND* 3, depth - 1, 1);
+        auto searcher = [&]() {
+            Position thread_pos = pos;
 
-        Movegen::unmake(pos, move);
+            while(1) {
+                size_t i = move_idx.fetch_add(1);
+                if(i >= n)
+                    break;
 
-        if(score > best_score) {
-            best_score = score;
-            best_move = move;
+                Move move = moves[i];
+
+                if(!Movegen::make(thread_pos, move))
+                    continue;
+
+                int score = -alphaBeta(thread_pos, -SEARCH_BOUND, SEARCH_BOUND, depth - 1, 1, timer);
+
+                Movegen::unmake(thread_pos, move);
+
+                if(timer.stop)
+                    break;
+
+                std::lock_guard<std::mutex> lock(mtx);
+                if(score > best_score) {
+                    best_score = score;
+                    current_best_move = move;
+                }
+            }
+        };
+
+        std::vector<std::thread> threads;
+        for(int i = 0; i < 4; ++i) {
+            threads.emplace_back(searcher);
+        }
+
+        for(auto& thread : threads) {
+            if(thread.joinable())
+                thread.join();
+        }
+
+        if(!current_best_move.is_null()) {
+            if(best_move == current_best_move)
+                stable_move_count++;
+            else
+                stable_move_count = 0;
+
+            best_move = current_best_move;
+
+            if(stable_move_count >= 2 && depth > 2)
+                return best_move;
         }
     }
 
     return best_move;
 }
 
-int Search::quiesce(Position& pos, int alpha, int beta){
+int Search::quiesce(Position& pos, int alpha, int beta, Timer& timer){
     int eval = pos.get_side() == PIECE_C::WHITE ? Evaluate::eval(pos) : -Evaluate::eval(pos);
 
     if(eval >= beta)
@@ -56,9 +107,13 @@ int Search::quiesce(Position& pos, int alpha, int beta){
             if(!Movegen::make(pos, move))
                 continue;
 
-            int score = -quiesce(pos, -beta, -alpha);
+            int score = -quiesce(pos, -beta, -alpha, timer);
 
             Movegen::unmake(pos, move);
+            if(timer.stop || std::chrono::steady_clock::now() >= timer.deadline) {
+                timer.stop = 1;
+                return 0;
+            }
 
             if(score >= beta)
                 return score;
@@ -74,9 +129,9 @@ int Search::quiesce(Position& pos, int alpha, int beta){
     return eval;
 }
 
-int Search::alphaBeta(Position& pos, int alpha, int beta, int depth, int ply_from_root) {
+int Search::alphaBeta(Position& pos, int alpha, int beta, int depth, int ply_from_root, Timer& timer) {
     if(depth == 0) {
-        return quiesce(pos, alpha, beta);
+        return quiesce(pos, alpha, beta, timer);
     }
 
     int best = -(SEARCH_BOUND);
@@ -91,9 +146,14 @@ int Search::alphaBeta(Position& pos, int alpha, int beta, int depth, int ply_fro
 
         no_legal_moves = 0;
 
-        int score = -alphaBeta(pos, -beta, -alpha, depth - 1, ply_from_root + 1);
+        int score = -alphaBeta(pos, -beta, -alpha, depth - 1, ply_from_root + 1, timer);
 
         Movegen::unmake(pos, move);
+
+        if(timer.stop || std::chrono::steady_clock::now() >= timer.deadline) {
+            timer.stop = 1;
+            return 0;
+        }
 
         if(score > best) {
             best = score;
@@ -102,7 +162,7 @@ int Search::alphaBeta(Position& pos, int alpha, int beta, int depth, int ply_fro
         }
 
         if(score >= beta) {
-            return score;
+            return best;
         }
     }
 
