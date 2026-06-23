@@ -22,7 +22,7 @@ Move uci_to_move(Position& pos, std::string str) {
     if(str.size() < 4)
         return Move::null();
     std::vector<Move> moves;
-    Movegen::generate_pseudo_legal_moves(pos, pos.get_side(), moves);
+    Movegen::generate_pseudo_legal_moves<Movegen::GenType::ALL>(pos, pos.get_side(), moves);
     uint8_t from_rank, from_file, to_rank, to_file;
     from_file = str[0] - 'a';
     from_rank = str[1] - '1';
@@ -179,15 +179,15 @@ void UCI::loop() {
                 }
             }
         } else if (cmd == "go") {
-            int depth = 3;
+            int move_time = 3000;
             while (stream >> tok) {
-                if (tok == "depth") {
-                    stream >> depth;
+                if (tok == "movetime") {
+                    stream >> move_time;
                     break;
                 }
             }
 
-            Move best = Search::search(pos, depth);
+            Move best = Search::search(pos, move_time);
             std::cout << "bestmove " << move_to_uci(best) << "\n";
         } else if (cmd == "quit") {
             break;

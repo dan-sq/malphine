@@ -8,16 +8,7 @@
 #include <thread>
 #include <atomic>
 #include <mutex>
-
-bool is_capture(Move move) {
-    auto flag = static_cast<MOVE_FLAG>(move.get_flags());
-    return flag == MOVE_FLAG::CAPTURE
-        || flag == MOVE_FLAG::EP_CAPTURE
-        || flag == MOVE_FLAG::KNIGHT_PROMO_CAPTURE
-        || flag == MOVE_FLAG::BISHOP_PROMO_CAPTURE
-        || flag == MOVE_FLAG::ROOK_PROMO_CAPTURE
-        || flag == MOVE_FLAG::QUEEN_PROMO_CAPTURE;
-}
+#include <iostream>
 
 Move Search::search(Position& pos, int time_ms) {
     Move best_move = Move::null();
@@ -27,7 +18,7 @@ Move Search::search(Position& pos, int time_ms) {
 
     int stable_move_count = 0;
     std::vector<Move> moves;
-    Movegen::generate_pseudo_legal_moves(pos, pos.get_side(), moves);
+    Movegen::generate_pseudo_legal_moves<Movegen::GenType::ALL>(pos, pos.get_side(), moves);
 
     const size_t n = moves.size();
     std::mutex mtx;
@@ -54,8 +45,10 @@ Move Search::search(Position& pos, int time_ms) {
 
                 Movegen::unmake(thread_pos, move);
 
-                if(timer.stop)
+                if(timer.stop) {
+                    std::cout << "info depth " << depth << "score " << best_score << "\n";
                     break;
+                }
 
                 std::lock_guard<std::mutex> lock(mtx);
                 if(score > best_score) {
@@ -75,6 +68,9 @@ Move Search::search(Position& pos, int time_ms) {
                 thread.join();
         }
 
+        if (timer.stop)
+            return best_move;
+
         if(!current_best_move.is_null()) {
             if(best_move == current_best_move)
                 stable_move_count++;
@@ -83,9 +79,10 @@ Move Search::search(Position& pos, int time_ms) {
 
             best_move = current_best_move;
 
-            if(stable_move_count >= 2 && depth > 2)
-                return best_move;
+            //if(stable_move_count >= 2 && depth > 2)
+            //   return best_move;
         }
+
     }
 
     return best_move;
@@ -101,29 +98,27 @@ int Search::quiesce(Position& pos, int alpha, int beta, Timer& timer){
         alpha = eval;
 
     std::vector<Move> moves;
-    Movegen::generate_pseudo_legal_moves(pos, pos.get_side(), moves);
+    Movegen::generate_pseudo_legal_moves<Movegen::GenType::CAPTURES>(pos, pos.get_side(), moves);
     for(auto& move : moves) {
-        if(is_capture(move)) {
-            if(!Movegen::make(pos, move))
-                continue;
+        if(!Movegen::make(pos, move))
+            continue;
 
-            int score = -quiesce(pos, -beta, -alpha, timer);
+        int score = -quiesce(pos, -beta, -alpha, timer);
 
-            Movegen::unmake(pos, move);
-            if(timer.stop || std::chrono::steady_clock::now() >= timer.deadline) {
-                timer.stop = 1;
-                return 0;
-            }
-
-            if(score >= beta)
-                return score;
-
-            if(score > eval)
-                eval = score;
-
-            if(score > alpha)
-                alpha = score;
+        Movegen::unmake(pos, move);
+        if(timer.stop || std::chrono::steady_clock::now() >= timer.deadline) {
+            timer.stop = 1;
+            return 0;
         }
+
+        if(score >= beta)
+            return score;
+
+        if(score > eval)
+            eval = score;
+
+        if(score > alpha)
+            alpha = score;
     }
 
     return eval;
@@ -136,7 +131,7 @@ int Search::alphaBeta(Position& pos, int alpha, int beta, int depth, int ply_fro
 
     int best = -(SEARCH_BOUND);
     std::vector<Move> moves;
-    Movegen::generate_pseudo_legal_moves(pos, pos.get_side(), moves);
+    Movegen::generate_pseudo_legal_moves<Movegen::GenType::ALL>(pos, pos.get_side(), moves);
     bool no_legal_moves = 1;
 
     for(auto& move : moves) {

@@ -141,6 +141,7 @@ void Movegen::init_horizontal_cache() {
     }
 }
 
+template<Movegen::GenType type>
 void Movegen::generate_pawn_moves(Position& pos, PIECE_C color, std::vector<Move>& moves) {
     auto bitboard = pos.pieces.get_pieces(color, PIECE_T::PAWN);
     auto empty = ~pos.pieces.get_both_pieces();
@@ -158,11 +159,13 @@ void Movegen::generate_pawn_moves(Position& pos, PIECE_C color, std::vector<Move
             auto right_blocker_mask_bb = (from_bb & ~FILE_H) << 9;
 
             if(from_bb & rank7) {
-                if(push_bb & empty) {
-                    moves.push_back(Move::encode(sq, sq + 8, MOVE_FLAG::KNIGHT_PROMO));
-                    moves.push_back(Move::encode(sq, sq + 8, MOVE_FLAG::BISHOP_PROMO));
-                    moves.push_back(Move::encode(sq, sq + 8, MOVE_FLAG::ROOK_PROMO));
-                    moves.push_back(Move::encode(sq, sq + 8, MOVE_FLAG::QUEEN_PROMO));
+                if constexpr (type == Movegen::GenType::ALL) {
+                    if(push_bb & empty) {
+                        moves.push_back(Move::encode(sq, sq + 8, MOVE_FLAG::KNIGHT_PROMO));
+                        moves.push_back(Move::encode(sq, sq + 8, MOVE_FLAG::BISHOP_PROMO));
+                        moves.push_back(Move::encode(sq, sq + 8, MOVE_FLAG::ROOK_PROMO));
+                        moves.push_back(Move::encode(sq, sq + 8, MOVE_FLAG::QUEEN_PROMO));
+                    }
                 }
                 if(left_blocker_mask_bb & enemy_bb) {
                     moves.push_back(Move::encode(sq, sq + 7, MOVE_FLAG::KNIGHT_PROMO_CAPTURE));
@@ -177,10 +180,12 @@ void Movegen::generate_pawn_moves(Position& pos, PIECE_C color, std::vector<Move
                     moves.push_back(Move::encode(sq, sq + 9, MOVE_FLAG::QUEEN_PROMO_CAPTURE));
                 }
             } else {
-                if(push_bb & empty) {
-                    moves.push_back(Move::encode(sq, sq + 8, MOVE_FLAG::QUIET));
-                    if((from_bb & rank2) && ((push_bb << 8) & empty)) {
-                        moves.push_back(Move::encode(sq, sq + 16, MOVE_FLAG::DBL_P_PUSH));
+                if constexpr (type == Movegen::GenType::ALL) {
+                    if(push_bb & empty) {
+                        moves.push_back(Move::encode(sq, sq + 8, MOVE_FLAG::QUIET));
+                        if((from_bb & rank2) && ((push_bb << 8) & empty)) {
+                            moves.push_back(Move::encode(sq, sq + 16, MOVE_FLAG::DBL_P_PUSH));
+                        }
                     }
                 }
 
@@ -203,11 +208,13 @@ void Movegen::generate_pawn_moves(Position& pos, PIECE_C color, std::vector<Move
             auto right_blocked_mask_bb = (from_bb & ~FILE_A) >> 9;
 
             if(from_bb & rank2) {
-                if(push_bb & empty) {
-                    moves.push_back(Move::encode(sq, sq - 8, MOVE_FLAG::KNIGHT_PROMO));
-                    moves.push_back(Move::encode(sq, sq - 8, MOVE_FLAG::BISHOP_PROMO));
-                    moves.push_back(Move::encode(sq, sq - 8, MOVE_FLAG::ROOK_PROMO));
-                    moves.push_back(Move::encode(sq, sq - 8, MOVE_FLAG::QUEEN_PROMO));
+                if constexpr (type == Movegen::GenType::ALL) {
+                    if(push_bb & empty) {
+                        moves.push_back(Move::encode(sq, sq - 8, MOVE_FLAG::KNIGHT_PROMO));
+                        moves.push_back(Move::encode(sq, sq - 8, MOVE_FLAG::BISHOP_PROMO));
+                        moves.push_back(Move::encode(sq, sq - 8, MOVE_FLAG::ROOK_PROMO));
+                        moves.push_back(Move::encode(sq, sq - 8, MOVE_FLAG::QUEEN_PROMO));
+                    }
                 }
                 if(left_blocked_mask_bb & enemy_bb) {
                     moves.push_back(Move::encode(sq, sq - 7, MOVE_FLAG::KNIGHT_PROMO_CAPTURE));
@@ -222,11 +229,13 @@ void Movegen::generate_pawn_moves(Position& pos, PIECE_C color, std::vector<Move
                     moves.push_back(Move::encode(sq, sq - 9, MOVE_FLAG::QUEEN_PROMO_CAPTURE));
                 }
             } else {
-                if(push_bb & empty) {
-                    moves.push_back(Move::encode(sq, sq - 8, MOVE_FLAG::QUIET)); 
+                if constexpr (type == Movegen::GenType::ALL) {
+                    if(push_bb & empty) {
+                        moves.push_back(Move::encode(sq, sq - 8, MOVE_FLAG::QUIET)); 
 
-                    if((from_bb & rank7) && ((push_bb >> 8) & empty)) {
-                        moves.push_back(Move::encode(sq, sq - 16, MOVE_FLAG::DBL_P_PUSH));
+                        if((from_bb & rank7) && ((push_bb >> 8) & empty)) {
+                            moves.push_back(Move::encode(sq, sq - 16, MOVE_FLAG::DBL_P_PUSH));
+                        }
                     }
                 }
                 if(left_blocked_mask_bb & enemy_bb) {
@@ -246,6 +255,7 @@ void Movegen::generate_pawn_moves(Position& pos, PIECE_C color, std::vector<Move
     }
 }
 
+template<Movegen::GenType type>
 void Movegen::generate_knight_moves(Position& pos, PIECE_C color, std::vector<Move>& moves) {
     auto bitboard = pos.pieces.get_pieces(color, PIECE_T::KNIGHT);
     auto empty_bb = ~pos.pieces.get_both_pieces();
@@ -261,8 +271,11 @@ void Movegen::generate_knight_moves(Position& pos, PIECE_C color, std::vector<Mo
             if(to_sq < 0 || to_sq > 63) continue;
             if(!knight_guard(sq, to_sq)) continue;
             uint64_t to_bb = static_cast<uint64_t>(1) << to_sq;
-            if(to_bb & empty_bb) {
-                moves.push_back(Move::encode(sq, to_sq, MOVE_FLAG::QUIET));
+
+            if constexpr (type == Movegen::GenType::ALL) {
+                if(to_bb & empty_bb) {
+                    moves.push_back(Move::encode(sq, to_sq, MOVE_FLAG::QUIET));
+                }
             }
             if(to_bb & enemy_bb) {
                 moves.push_back(Move::encode(sq, to_sq, MOVE_FLAG::CAPTURE));
@@ -271,6 +284,7 @@ void Movegen::generate_knight_moves(Position& pos, PIECE_C color, std::vector<Mo
     }
 }
 
+template<Movegen::GenType type>
 void Movegen::generate_bishop_moves(Position& pos, PIECE_C color, std::vector<Move>& moves) {
     auto bitboard = pos.pieces.get_pieces(color, PIECE_T::BISHOP);
     auto empty_bb = ~pos.pieces.get_both_pieces();
@@ -290,8 +304,10 @@ void Movegen::generate_bishop_moves(Position& pos, PIECE_C color, std::vector<Mo
             auto to_bb = static_cast<uint64_t>(1) << to_sq;
             attack_bb &= attack_bb - 1;
 
-            if(to_bb & empty_bb) {
-                moves.push_back(Move::encode(sq, to_sq, MOVE_FLAG::QUIET));
+            if constexpr (type == Movegen::GenType::ALL) {
+                if(to_bb & empty_bb) {
+                    moves.push_back(Move::encode(sq, to_sq, MOVE_FLAG::QUIET));
+                }
             }
 
             if(to_bb & enemy_bb) {
@@ -300,6 +316,8 @@ void Movegen::generate_bishop_moves(Position& pos, PIECE_C color, std::vector<Mo
         }
     }
 }
+
+template<Movegen::GenType type>
 void Movegen::generate_rook_moves(Position& pos, PIECE_C color, std::vector<Move>& moves){
     auto bitboard = pos.pieces.get_pieces(color, PIECE_T::ROOK);
     auto empty_bb = ~pos.pieces.get_both_pieces();
@@ -319,8 +337,10 @@ void Movegen::generate_rook_moves(Position& pos, PIECE_C color, std::vector<Move
             auto to_bb = static_cast<uint64_t>(1) << to_sq;
             attack_bb &= attack_bb - 1;
 
-            if(to_bb & empty_bb) {
-                moves.push_back(Move::encode(sq, to_sq, MOVE_FLAG::QUIET));
+            if constexpr (type == Movegen::GenType::ALL) {
+                if(to_bb & empty_bb) {
+                    moves.push_back(Move::encode(sq, to_sq, MOVE_FLAG::QUIET));
+                }
             }
 
             if(to_bb & enemy_bb) {
@@ -329,6 +349,8 @@ void Movegen::generate_rook_moves(Position& pos, PIECE_C color, std::vector<Move
         }
     }
 }
+
+template<Movegen::GenType type>
 void Movegen::generate_queen_moves(Position& pos, PIECE_C color, std::vector<Move>& moves){
     auto bitboard = pos.pieces.get_pieces(color, PIECE_T::QUEEN);
     auto empty_bb = ~pos.pieces.get_both_pieces();
@@ -350,8 +372,10 @@ void Movegen::generate_queen_moves(Position& pos, PIECE_C color, std::vector<Mov
             auto to_bb = static_cast<uint64_t>(1) << to_sq;
             attack_bb &= attack_bb - 1;
 
-            if(to_bb & empty_bb) {
-                moves.push_back(Move::encode(sq, to_sq, MOVE_FLAG::QUIET));
+            if constexpr (type == Movegen::GenType::ALL) {
+                if(to_bb & empty_bb) {
+                    moves.push_back(Move::encode(sq, to_sq, MOVE_FLAG::QUIET));
+                }
             }
 
             if(to_bb & enemy_bb) {
@@ -360,6 +384,8 @@ void Movegen::generate_queen_moves(Position& pos, PIECE_C color, std::vector<Mov
         }
     }
 }
+
+template<Movegen::GenType type>
 void Movegen::generate_king_moves(Position& pos, PIECE_C color, std::vector<Move>& moves){
     auto bitboard = pos.pieces.get_pieces(color, PIECE_T::KING);
     auto empty_bb = ~pos.pieces.get_both_pieces();
@@ -367,50 +393,52 @@ void Movegen::generate_king_moves(Position& pos, PIECE_C color, std::vector<Move
     auto enemy_bb = pos.pieces.get_colored_pieces(enemy);
     auto cstl_flag = pos.get_castle();
     auto rooks_bb = pos.pieces.get_pieces(color, PIECE_T::ROOK);
-    if(color == PIECE_C::WHITE) {
-        if(cstl_flag & static_cast<uint8_t>(CASTLE_PERM::WKC)) {
-            auto cstl_mask_bb = static_cast<uint64_t>(1) << 5 | static_cast<uint64_t>(1) << 6;
-            if(!is_sq_attacked_by_color(pos, 4, PIECE_C::BLACK)
-                    && !is_sq_attacked_by_color(pos, 5, PIECE_C::BLACK)
-                    && !is_sq_attacked_by_color(pos, 6, PIECE_C::BLACK)
-                    && (cstl_mask_bb & empty_bb) == cstl_mask_bb
-                    && (bitboard & static_cast<uint64_t>(1) << 4)
-                    && (rooks_bb & static_cast<uint64_t>(1) << 7)) {
-                moves.push_back(Move::encode(4, 6, MOVE_FLAG::K_CSTL));
-            }
-        }
-        if(cstl_flag & static_cast<uint8_t>(CASTLE_PERM::WQC)) {
-            auto cstl_mask_bb = static_cast<uint64_t>(1) << 3 | static_cast<uint64_t>(1) << 2 | static_cast<uint64_t>(1) << 1;
+    if constexpr (type == Movegen::GenType::ALL) {
+        if(color == PIECE_C::WHITE) {
+            if(cstl_flag & static_cast<uint8_t>(CASTLE_PERM::WKC)) {
+                auto cstl_mask_bb = static_cast<uint64_t>(1) << 5 | static_cast<uint64_t>(1) << 6;
                 if(!is_sq_attacked_by_color(pos, 4, PIECE_C::BLACK)
-                    && !is_sq_attacked_by_color(pos, 3, PIECE_C::BLACK)
-                    && !is_sq_attacked_by_color(pos, 2, PIECE_C::BLACK)
-                    && (cstl_mask_bb & empty_bb) == cstl_mask_bb
-                    && (bitboard & static_cast<uint64_t>(1) << 4)
-                    && (rooks_bb & 1)) {
-                moves.push_back(Move::encode(4, 2, MOVE_FLAG::Q_CSTL));
+                        && !is_sq_attacked_by_color(pos, 5, PIECE_C::BLACK)
+                        && !is_sq_attacked_by_color(pos, 6, PIECE_C::BLACK)
+                        && (cstl_mask_bb & empty_bb) == cstl_mask_bb
+                        && (bitboard & static_cast<uint64_t>(1) << 4)
+                        && (rooks_bb & static_cast<uint64_t>(1) << 7)) {
+                    moves.push_back(Move::encode(4, 6, MOVE_FLAG::K_CSTL));
+                }
             }
-        }
-    } else {
-        if(cstl_flag & static_cast<uint8_t>(CASTLE_PERM::BKC)) {
-            auto cstl_mask_bb = static_cast<uint64_t>(1) << 61 | static_cast<uint64_t>(1) << 62;
-            if(!is_sq_attacked_by_color(pos, 60, PIECE_C::WHITE)
-                    && !is_sq_attacked_by_color(pos, 61, PIECE_C::WHITE)
-                    && !is_sq_attacked_by_color(pos, 62, PIECE_C::WHITE)
-                    && (cstl_mask_bb & empty_bb) == cstl_mask_bb
-                    && (bitboard & static_cast<uint64_t>(1) << 60)
-                    && (rooks_bb & static_cast<uint64_t>(1) << 63)) {
-                        moves.push_back(Move::encode(60, 62, MOVE_FLAG::K_CSTL));
+            if(cstl_flag & static_cast<uint8_t>(CASTLE_PERM::WQC)) {
+                auto cstl_mask_bb = static_cast<uint64_t>(1) << 3 | static_cast<uint64_t>(1) << 2 | static_cast<uint64_t>(1) << 1;
+                    if(!is_sq_attacked_by_color(pos, 4, PIECE_C::BLACK)
+                        && !is_sq_attacked_by_color(pos, 3, PIECE_C::BLACK)
+                        && !is_sq_attacked_by_color(pos, 2, PIECE_C::BLACK)
+                        && (cstl_mask_bb & empty_bb) == cstl_mask_bb
+                        && (bitboard & static_cast<uint64_t>(1) << 4)
+                        && (rooks_bb & 1)) {
+                    moves.push_back(Move::encode(4, 2, MOVE_FLAG::Q_CSTL));
+                }
             }
-        }
-        if(cstl_flag & static_cast<uint8_t>(CASTLE_PERM::BQC)) {
-            auto cstl_mask_bb = static_cast<uint64_t>(1) << 57 | static_cast<uint64_t>(1) << 58 | static_cast<uint64_t>(1) << 59;
-            if(!is_sq_attacked_by_color(pos, 60, PIECE_C::WHITE)
-                    && !is_sq_attacked_by_color(pos, 59, PIECE_C::WHITE)
-                    && !is_sq_attacked_by_color(pos, 58, PIECE_C::WHITE)
-                    && (cstl_mask_bb & empty_bb) == cstl_mask_bb
-                    && (bitboard & static_cast<uint64_t>(1) << 60)
-                    && (rooks_bb & static_cast<uint64_t>(1) << 56)) {
-                        moves.push_back(Move::encode(60, 58, MOVE_FLAG::Q_CSTL));
+        } else {
+            if(cstl_flag & static_cast<uint8_t>(CASTLE_PERM::BKC)) {
+                auto cstl_mask_bb = static_cast<uint64_t>(1) << 61 | static_cast<uint64_t>(1) << 62;
+                if(!is_sq_attacked_by_color(pos, 60, PIECE_C::WHITE)
+                        && !is_sq_attacked_by_color(pos, 61, PIECE_C::WHITE)
+                        && !is_sq_attacked_by_color(pos, 62, PIECE_C::WHITE)
+                        && (cstl_mask_bb & empty_bb) == cstl_mask_bb
+                        && (bitboard & static_cast<uint64_t>(1) << 60)
+                        && (rooks_bb & static_cast<uint64_t>(1) << 63)) {
+                            moves.push_back(Move::encode(60, 62, MOVE_FLAG::K_CSTL));
+                }
+            }
+            if(cstl_flag & static_cast<uint8_t>(CASTLE_PERM::BQC)) {
+                auto cstl_mask_bb = static_cast<uint64_t>(1) << 57 | static_cast<uint64_t>(1) << 58 | static_cast<uint64_t>(1) << 59;
+                if(!is_sq_attacked_by_color(pos, 60, PIECE_C::WHITE)
+                        && !is_sq_attacked_by_color(pos, 59, PIECE_C::WHITE)
+                        && !is_sq_attacked_by_color(pos, 58, PIECE_C::WHITE)
+                        && (cstl_mask_bb & empty_bb) == cstl_mask_bb
+                        && (bitboard & static_cast<uint64_t>(1) << 60)
+                        && (rooks_bb & static_cast<uint64_t>(1) << 56)) {
+                            moves.push_back(Move::encode(60, 58, MOVE_FLAG::Q_CSTL));
+                }
             }
         }
     }
@@ -424,9 +452,11 @@ void Movegen::generate_king_moves(Position& pos, PIECE_C color, std::vector<Move
             if(to_sq < 0 || to_sq > 63) continue;
             if(!king_guard(sq, to_sq)) continue;
             auto to_bb = static_cast<uint64_t>(1) << to_sq;
-
-            if(to_bb & empty_bb) {
-                moves.push_back(Move::encode(sq, to_sq, MOVE_FLAG::QUIET));
+            
+            if constexpr (type == Movegen::GenType::ALL) {
+                if(to_bb & empty_bb) {
+                    moves.push_back(Move::encode(sq, to_sq, MOVE_FLAG::QUIET));
+                }
             }
 
             if(to_bb & enemy_bb) {
@@ -437,13 +467,14 @@ void Movegen::generate_king_moves(Position& pos, PIECE_C color, std::vector<Move
     }
 }
 
+template<Movegen::GenType type>
 void Movegen::generate_pseudo_legal_moves(Position& pos, PIECE_C color, std::vector<Move>& moves) {
-    generate_pawn_moves(pos, color, moves);
-    generate_knight_moves(pos, color, moves);
-    generate_bishop_moves(pos, color, moves);
-    generate_rook_moves(pos, color, moves);
-    generate_queen_moves(pos, color, moves);
-    generate_king_moves(pos, color, moves);
+    generate_pawn_moves<type>(pos, color, moves);
+    generate_knight_moves<type>(pos, color, moves);
+    generate_bishop_moves<type>(pos, color, moves);
+    generate_rook_moves<type>(pos, color, moves);
+    generate_queen_moves<type>(pos, color, moves);
+    generate_king_moves<type>(pos, color, moves);
 }
 
 uint64_t Movegen::perft(Position& pos, uint64_t depth) {
@@ -451,7 +482,7 @@ uint64_t Movegen::perft(Position& pos, uint64_t depth) {
     if(depth == 0) return static_cast<uint64_t>(1);
 
     std::vector<Move> moves;
-    generate_pseudo_legal_moves(pos, pos.get_side(), moves);
+    generate_pseudo_legal_moves<Movegen::GenType::ALL>(pos, pos.get_side(), moves);
 
     for(auto& move : moves) {
         if(make(pos, move)) {
@@ -463,30 +494,8 @@ uint64_t Movegen::perft(Position& pos, uint64_t depth) {
     return nodes;
 }
 
-PIECE_T move_flag_to_pt(MOVE_FLAG flag) {
-    switch(flag) {
-        case MOVE_FLAG::KNIGHT_PROMO:
-            return PIECE_T::KNIGHT;
-        case MOVE_FLAG::KNIGHT_PROMO_CAPTURE:
-            return PIECE_T::KNIGHT;
-        case MOVE_FLAG::BISHOP_PROMO:
-            return PIECE_T::BISHOP;
-        case MOVE_FLAG::BISHOP_PROMO_CAPTURE:
-            return PIECE_T::BISHOP;
-        case MOVE_FLAG::ROOK_PROMO:
-            return PIECE_T::ROOK;
-        case MOVE_FLAG::ROOK_PROMO_CAPTURE:
-            return PIECE_T::ROOK;
-        case MOVE_FLAG::QUEEN_PROMO:
-            return PIECE_T::QUEEN;
-        case MOVE_FLAG::QUEEN_PROMO_CAPTURE:
-            return PIECE_T::QUEEN;
-        default:
-            return PIECE_T::NONE;
-    }
-}
-
 bool Movegen::make(Position& pos, Move move) {
+    if(move.is_null()) return 0;
     PIECE_C us = pos.get_side();
     PIECE_C enemy = us == PIECE_C::WHITE ? PIECE_C::BLACK : PIECE_C::WHITE;
     auto from_sq = move.get_from();
@@ -518,12 +527,10 @@ bool Movegen::make(Position& pos, Move move) {
 
             if(us == PIECE_C::WHITE) {
                 if(pt == PIECE_T::KING && from_sq == 4) cstl_perms &= ~(1 << 0 | 1 << 1);
-
                 if(pt == PIECE_T::ROOK && from_sq == 7) cstl_perms &= ~(1 << 0);
                 if(pt == PIECE_T::ROOK && from_sq == 0) cstl_perms &= ~(1 << 1);
             } else {
                 if(pt == PIECE_T::KING && from_sq == 60) cstl_perms &= ~(1 << 2 | 1 << 3);
-
                 if(pt == PIECE_T::ROOK && from_sq == 63) cstl_perms &= ~(1 << 2);
                 if(pt == PIECE_T::ROOK && from_sq == 56) cstl_perms &= ~(1 << 3);
             }
@@ -983,3 +990,6 @@ void Movegen::unmake(Position& pos, Move move) {
             break;
     }
 }
+
+template void Movegen::generate_pseudo_legal_moves<Movegen::GenType::ALL>(Position &pos, PIECE_C color, std::vector<Move> &moves);
+template void Movegen::generate_pseudo_legal_moves<Movegen::GenType::CAPTURES>(Position &pos, PIECE_C color, std::vector<Move> &moves);
