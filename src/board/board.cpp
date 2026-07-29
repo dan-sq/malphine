@@ -63,7 +63,7 @@ uint64_t Pieces::get_pieces(PIECE_C color, PIECE_T type) const {
     return piece_board[static_cast<int>(color)][static_cast<int>(type)];
 }
 
-PIECE_T Pieces::get_piece_on(uint8_t sq) {
+PIECE_T Pieces::get_piece_on(uint8_t sq) const {
     auto to_bb = static_cast<uint64_t>(1) << sq;
     for(int c = 0; c < NUM_COLORS; c++) {
         for(int p = 0; p < NUM_PIECES; p++) {

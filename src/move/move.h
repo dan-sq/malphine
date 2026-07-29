@@ -15,11 +15,13 @@ class Move {
 
     public:
         Move() : move(0) {}
-        
         uint8_t get_from() const;
         uint8_t get_to() const;
         uint8_t get_flags() const;
         static Move encode(uint8_t from, uint8_t to, MOVE_FLAG flags);
         static Move null() { return Move(0); }
         bool is_null() const { return this->move == 0; }
+        bool operator==(const Move mv) {
+            return move == mv.move;
+        }
 };

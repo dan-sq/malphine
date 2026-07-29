@@ -5,90 +5,139 @@
 #include "evaluate/evaluate.h"
 #include <vector>
 #include <chrono>
-#include <thread>
-#include <atomic>
-#include <mutex>
 #include <iostream>
+#include <algorithm>
+
+int move_score(const Position& pos, Move move) {
+    int result = 0;
+    switch(static_cast<MOVE_FLAG>(move.get_flags())) {
+        case MOVE_FLAG::KNIGHT_PROMO_CAPTURE: {
+            PIECE_T attacker = PIECE_T::PAWN;
+            PIECE_T attacked = pos.pieces.get_piece_on(move.get_to());
+
+            result += 50 + Evaluate::PIECE_VALS[static_cast<int>(attacked)] * 10 - Evaluate::PIECE_VALS[static_cast<int>(attacker)];
+            break;
+        }
+        case MOVE_FLAG::BISHOP_PROMO_CAPTURE: {
+            PIECE_T attacker = PIECE_T::PAWN;
+            PIECE_T attacked = pos.pieces.get_piece_on(move.get_to());
+
+            result += 60 + Evaluate::PIECE_VALS[static_cast<int>(attacked)] * 10 - Evaluate::PIECE_VALS[static_cast<int>(attacker)];
+            break;
+        }
+        case MOVE_FLAG::ROOK_PROMO_CAPTURE: {
+            PIECE_T attacker = PIECE_T::PAWN;
+            PIECE_T attacked = pos.pieces.get_piece_on(move.get_to());
+
+            result += 70 + Evaluate::PIECE_VALS[static_cast<int>(attacked)] * 10 - Evaluate::PIECE_VALS[static_cast<int>(attacker)];
+            break;
+        }
+        case MOVE_FLAG::QUEEN_PROMO_CAPTURE: {
+            PIECE_T attacker = PIECE_T::PAWN;
+            PIECE_T attacked = pos.pieces.get_piece_on(move.get_to());
+
+            result += 80 + Evaluate::PIECE_VALS[static_cast<int>(attacked)] * 10 - Evaluate::PIECE_VALS[static_cast<int>(attacker)];
+            break;
+        }
+        case MOVE_FLAG::EP_CAPTURE: {
+            PIECE_T attacker = pos.pieces.get_piece_on(move.get_from());
+            PIECE_T attacked = PIECE_T::PAWN;
+
+            result += Evaluate::PIECE_VALS[static_cast<int>(attacked)] * 10 - Evaluate::PIECE_VALS[static_cast<int>(attacker)];
+            break;
+        }
+        case MOVE_FLAG::CAPTURE: {
+            PIECE_T attacker = pos.pieces.get_piece_on(move.get_from());
+            PIECE_T attacked = pos.pieces.get_piece_on(move.get_to());
+
+            result += Evaluate::PIECE_VALS[static_cast<int>(attacked)] * 10 - Evaluate::PIECE_VALS[static_cast<int>(attacker)];
+            break;
+        }
+        case MOVE_FLAG::KNIGHT_PROMO:
+            result += 75;
+            break;
+        case MOVE_FLAG::BISHOP_PROMO:
+            result += 80;
+            break;
+        case MOVE_FLAG::ROOK_PROMO:
+            result += 85;
+            break;
+        case MOVE_FLAG::QUEEN_PROMO:
+            result += 90;
+            break;
+        case MOVE_FLAG::K_CSTL:
+            result += 70;
+            break;
+        case MOVE_FLAG::Q_CSTL:
+            result += 70;
+            break;
+        case MOVE_FLAG::DBL_P_PUSH:
+        case MOVE_FLAG::QUIET:
+            result += 65;
+            break;
+    }
+
+    return result;
+}
+
+void order_moves(const Position& pos, std::vector<Move>& moves) {
+    std::sort(moves.begin(), moves.end(), [&](const Move& a, const Move& b) {
+            return move_score(pos, a) > move_score(pos, b);
+            });
+}
 
 Move Search::search(Position& pos, int time_ms) {
     Move best_move = Move::null();
-    Timer timer = {
+    Context context = {
         .deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(time_ms),
     };
 
-    int stable_move_count = 0;
     std::vector<Move> moves;
     Movegen::generate_pseudo_legal_moves<Movegen::GenType::ALL>(pos, pos.get_side(), moves);
+    order_moves(pos, moves);
 
-    const size_t n = moves.size();
-    std::mutex mtx;
-
-    for(int depth = 1; depth <= DEPTH_MAX && !timer.stop; depth++) {
+    for(int depth = 1; depth <= DEPTH_MAX && !context.stop; depth++) {
         int best_score = -SEARCH_BOUND;
         Move current_best_move = Move::null();
-        std::atomic<size_t> move_idx = 0;
 
-        auto searcher = [&]() {
-            Position thread_pos = pos;
+        if (!best_move.is_null()) {
+            auto it = std::find(moves.begin(), moves.end(), best_move);
+            if (it != moves.end())
+                std::iter_swap(moves.begin(), it);
+        }
+        
+        for (auto& move : moves) {
+            if(!Movegen::make(pos, move))
+                continue;
 
-            while(1) {
-                size_t i = move_idx.fetch_add(1);
-                if(i >= n)
-                    break;
+            int score = -alphaBeta(pos, -SEARCH_BOUND, SEARCH_BOUND, depth - 1, 1, context);
 
-                Move move = moves[i];
+            Movegen::unmake(pos, move);
 
-                if(!Movegen::make(thread_pos, move))
-                    continue;
-
-                int score = -alphaBeta(thread_pos, -SEARCH_BOUND, SEARCH_BOUND, depth - 1, 1, timer);
-
-                Movegen::unmake(thread_pos, move);
-
-                if(timer.stop) {
-                    std::cout << "info depth " << depth << "score " << best_score << "\n";
-                    break;
-                }
-
-                std::lock_guard<std::mutex> lock(mtx);
-                if(score > best_score) {
-                    best_score = score;
-                    current_best_move = move;
-                }
+            if(context.stop) {
+                break;
             }
-        };
 
-        std::vector<std::thread> threads;
-        for(int i = 0; i < 4; ++i) {
-            threads.emplace_back(searcher);
+            if(score > best_score) {
+                best_score = score;
+                current_best_move = move;
+            }
         }
 
-        for(auto& thread : threads) {
-            if(thread.joinable())
-                thread.join();
-        }
-
-        if (timer.stop)
+        if (context.stop) {
             return best_move;
+        }
 
         if(!current_best_move.is_null()) {
-            if(best_move == current_best_move)
-                stable_move_count++;
-            else
-                stable_move_count = 0;
-
             best_move = current_best_move;
-
-            //if(stable_move_count >= 2 && depth > 2)
-            //   return best_move;
         }
-
+        std::cout << "info depth " << depth << " score cp " << best_score << "\n";
     }
 
     return best_move;
 }
 
-int Search::quiesce(Position& pos, int alpha, int beta, Timer& timer){
+int Search::quiesce(Position& pos, int alpha, int beta, Context& context){
     int eval = pos.get_side() == PIECE_C::WHITE ? Evaluate::eval(pos) : -Evaluate::eval(pos);
 
     if(eval >= beta)
@@ -99,15 +148,16 @@ int Search::quiesce(Position& pos, int alpha, int beta, Timer& timer){
 
     std::vector<Move> moves;
     Movegen::generate_pseudo_legal_moves<Movegen::GenType::CAPTURES>(pos, pos.get_side(), moves);
+    order_moves(pos, moves);
     for(auto& move : moves) {
         if(!Movegen::make(pos, move))
             continue;
 
-        int score = -quiesce(pos, -beta, -alpha, timer);
+        int score = -quiesce(pos, -beta, -alpha, context);
 
         Movegen::unmake(pos, move);
-        if(timer.stop || std::chrono::steady_clock::now() >= timer.deadline) {
-            timer.stop = 1;
+        if(context.stop || std::chrono::steady_clock::now() >= context.deadline) {
+            context.stop = 1;
             return 0;
         }
 
@@ -124,14 +174,15 @@ int Search::quiesce(Position& pos, int alpha, int beta, Timer& timer){
     return eval;
 }
 
-int Search::alphaBeta(Position& pos, int alpha, int beta, int depth, int ply_from_root, Timer& timer) {
+int Search::alphaBeta(Position& pos, int alpha, int beta, int depth, int ply_from_root, Context& context) {
     if(depth == 0) {
-        return quiesce(pos, alpha, beta, timer);
+        return quiesce(pos, alpha, beta, context);
     }
 
-    int best = -(SEARCH_BOUND);
+    int best = -SEARCH_BOUND;
     std::vector<Move> moves;
     Movegen::generate_pseudo_legal_moves<Movegen::GenType::ALL>(pos, pos.get_side(), moves);
+    order_moves(pos, moves);
     bool no_legal_moves = 1;
 
     for(auto& move : moves) {
@@ -141,12 +192,12 @@ int Search::alphaBeta(Position& pos, int alpha, int beta, int depth, int ply_fro
 
         no_legal_moves = 0;
 
-        int score = -alphaBeta(pos, -beta, -alpha, depth - 1, ply_from_root + 1, timer);
+        int score = -alphaBeta(pos, -beta, -alpha, depth - 1, ply_from_root + 1, context);
 
         Movegen::unmake(pos, move);
 
-        if(timer.stop || std::chrono::steady_clock::now() >= timer.deadline) {
-            timer.stop = 1;
+        if(context.stop || std::chrono::steady_clock::now() >= context.deadline) {
+            context.stop = 1;
             return 0;
         }
 

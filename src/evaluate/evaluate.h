@@ -5,7 +5,7 @@
 namespace Evaluate {
     int eval(Position& pos);
     uint8_t mirror_sq(uint8_t sq);
-    constexpr std::array<int, 6> PIECE_VALS = { 100, 320, 330, 550, 900, 0 };
+    constexpr std::array<int, 6> PIECE_VALS = { 100, 320, 330, 500, 900, 0 };
     // white orientation for all PSTs
     constexpr std::array<std::array<int, 64>, 6> PST = {{
       {{

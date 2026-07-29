@@ -25,7 +25,7 @@ class Pieces {
         void remove_piece(PIECE_C color, PIECE_T type, int square);
         uint64_t get_colored_pieces(PIECE_C color) const;
         uint64_t get_both_pieces() const;
-        PIECE_T get_piece_on(uint8_t sq);
+        PIECE_T get_piece_on(uint8_t sq) const;
 };
 
 struct Undo {
@@ -47,6 +47,7 @@ class Position {
         uint8_t ply;
         uint8_t full_moves;
         std::vector<Undo> undos;
+        uint64_t zobrist_hash;
 
     public:
         Position() : side(PIECE_C::WHITE), castle(0), en_pas(64), half_moves(0), full_moves(1), ply(0) {
@@ -71,4 +72,6 @@ class Position {
         uint8_t get_ply();
         Undo fetch_and_pop_undos();
         void append_to_undos(Undo undo);
+        uint64_t get_zobrist_hash();
+        void set_zobrist_hash(uint64_t hash);
 };
