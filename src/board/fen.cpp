@@ -1,11 +1,13 @@
 #include "fen.h"
 #include "board.h"
+#include "transposition-table/zobrist.h"
 #include <ranges>
 #include <unordered_map>
 
 enum class PARSER_STATE { POS, MV, CSTL, EP_SQ, HM, FM };
 
 void load_fen(Position& pos, const std::string &fen) {
+    pos.reset_hash();
 
     auto parts = fen | std::views::split(' ')
                         | std::views::transform([](auto part) {
@@ -44,8 +46,10 @@ void load_fen(Position& pos, const std::string &fen) {
                 auto piece = symbol_to_piece_t[ch];
                 if(std::isupper(ch)) {
                     pos.set_piece(PIECE_C::WHITE, piece, square);
+                    pos.xor_hash(Zobrist::white_keys[static_cast<int>(piece)][square]);
                 } else {
                     pos.set_piece(PIECE_C::BLACK, piece, square);
+                    pos.xor_hash(Zobrist::black_keys[static_cast<int>(piece)][square]);
                 }
 
                 square++;
@@ -59,6 +63,7 @@ void load_fen(Position& pos, const std::string &fen) {
                 pos.set_side(PIECE_C::WHITE);
             } else {
                 pos.set_side(PIECE_C::BLACK);
+                pos.xor_hash(Zobrist::side_key);
             }
 
             state = PARSER_STATE::CSTL;
@@ -82,6 +87,7 @@ void load_fen(Position& pos, const std::string &fen) {
                 }
             }
             pos.set_castle(perms);
+            pos.xor_hash(Zobrist::cstl_keys[perms]);
 
             state = PARSER_STATE::EP_SQ;
             break;
@@ -91,6 +97,7 @@ void load_fen(Position& pos, const std::string &fen) {
                 int file = part[0] - 'a';
                 int rank = part[1] - '1';
                 pos.set_en_pas(rank * 8 + file);
+                pos.xor_hash(Zobrist::ep_keys[file]);
             } else {
                 pos.set_en_pas(64);
             }

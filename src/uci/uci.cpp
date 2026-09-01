@@ -145,6 +145,7 @@ void UCI::loop() {
             std::cout << "readyok\n";
         } else if(cmd == "ucinewgame") {
             pos = Position{};
+            Search::clear_table();
             load_fen(pos, "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1");
         } else if(cmd == "position") {
             stream >> tok;

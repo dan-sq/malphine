@@ -9,14 +9,13 @@ namespace Movegen {
         std::array<uint64_t, 64> shifts = {};
         std::array<std::array<uint64_t, 512>, 64> moves = {};
     };
-    inline DiagonalCache diag_cache = {};
 
     struct HorizontalCache {
         std::array<uint64_t, 64> masks = {};
         std::array<uint64_t, 64> shifts = {};
         std::array<std::array<uint64_t, 4096>, 64> moves = {};
     };
-    inline HorizontalCache hori_cache = {};
+
     enum class GenType { ALL, CAPTURES };
     constexpr int KNIGHT_OFFSETS[8] = { 17, 10, -6, -17, -15, -10, 6, 15 };
     constexpr int KING_OFFSETS[8] = { 7, 8, 9, 1, -7, -8, -9, -1 };
@@ -26,8 +25,7 @@ namespace Movegen {
     constexpr auto rank2 = static_cast<uint64_t>(0x000000000000FF00);
     constexpr auto rank7 = static_cast<uint64_t>(0x00FF000000000000);
     constexpr auto rank8 = static_cast<uint64_t>(0xFF00000000000000);
-    void init_diagonal_cache();
-    void init_horizontal_cache();
+    void init();
     template<GenType type>
     void generate_pawn_moves(Position& pos, PIECE_C color, std::vector<Move>& moves);
     template<GenType type>

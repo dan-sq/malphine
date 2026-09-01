@@ -7,6 +7,12 @@
 #include <chrono>
 #include <iostream>
 #include <algorithm>
+#include <optional>
+#include "transposition-table/table.h"
+
+namespace Search {
+    TranspositionTable table{};
+}
 
 int move_score(const Position& pos, Move move) {
     int result = 0;
@@ -88,16 +94,28 @@ void order_moves(const Position& pos, std::vector<Move>& moves) {
 
 Move Search::search(Position& pos, int time_ms) {
     Move best_move = Move::null();
+    Move hash_move = Move::null();
     Context context = {
         .deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(time_ms),
     };
 
+    auto entry = table.get_entry(pos.get_zobrist_hash());
+    if (entry.has_value()) {
+        hash_move = entry->get_best();
+    }
     std::vector<Move> moves;
     Movegen::generate_pseudo_legal_moves<Movegen::GenType::ALL>(pos, pos.get_side(), moves);
     order_moves(pos, moves);
+    if (!hash_move.is_null()) {
+        auto it = std::find(moves.begin(), moves.end(), hash_move);
+            if (it != moves.end())
+                std::iter_swap(moves.begin(), it);
+    }
 
     for(int depth = 1; depth <= DEPTH_MAX && !context.stop; depth++) {
         int best_score = -SEARCH_BOUND;
+        int alpha = -SEARCH_BOUND;
+        int beta = SEARCH_BOUND;
         Move current_best_move = Move::null();
 
         if (!best_move.is_null()) {
@@ -105,12 +123,12 @@ Move Search::search(Position& pos, int time_ms) {
             if (it != moves.end())
                 std::iter_swap(moves.begin(), it);
         }
-        
+
         for (auto& move : moves) {
             if(!Movegen::make(pos, move))
                 continue;
 
-            int score = -alphaBeta(pos, -SEARCH_BOUND, SEARCH_BOUND, depth - 1, 1, context);
+            int score = -alphaBeta(pos, -beta, -alpha, depth - 1, 1, context);
 
             Movegen::unmake(pos, move);
 
@@ -121,6 +139,10 @@ Move Search::search(Position& pos, int time_ms) {
             if(score > best_score) {
                 best_score = score;
                 current_best_move = move;
+
+                if (score > alpha) {
+                    alpha = score;
+                }
             }
         }
 
@@ -179,10 +201,41 @@ int Search::alphaBeta(Position& pos, int alpha, int beta, int depth, int ply_fro
         return quiesce(pos, alpha, beta, context);
     }
 
+    auto entry = table.get_entry(pos.get_zobrist_hash());
+    auto hash_move = Move::null();
+    if (entry.has_value()) {
+        auto transposition = entry.value();
+        hash_move = transposition.get_best();
+        int t_score = transposition.get_score();
+        if (transposition.get_depth() >= depth) {
+            switch(transposition.get_kind()) {
+                case NodeKind::EXACT:
+                    return t_score;
+                case NodeKind::UPPER_BOUND:
+                    if (t_score < alpha) {
+                        return t_score;
+                    }
+                    break;
+                case NodeKind::LOWER_BOUND:
+                    if (t_score >= beta) {
+                        return t_score;
+                    }
+                    break;
+            }
+        }
+    }
+    int original_alpha = alpha;
     int best = -SEARCH_BOUND;
+    Move best_move = Move::null();
     std::vector<Move> moves;
     Movegen::generate_pseudo_legal_moves<Movegen::GenType::ALL>(pos, pos.get_side(), moves);
     order_moves(pos, moves);
+    if (!hash_move.is_null()) {
+        auto it = std::find(moves.begin(), moves.end(), hash_move);
+            if (it != moves.end())
+                std::iter_swap(moves.begin(), it);
+    }
+
     bool no_legal_moves = 1;
 
     for(auto& move : moves) {
@@ -203,11 +256,14 @@ int Search::alphaBeta(Position& pos, int alpha, int beta, int depth, int ply_fro
 
         if(score > best) {
             best = score;
+            best_move = move;
             if(score > alpha)
                 alpha = score;
         }
 
         if(score >= beta) {
+            TableEntry new_entry{ pos.get_zobrist_hash(), move, depth, best, NodeKind::LOWER_BOUND };
+            table.set_entry(new_entry, pos.get_zobrist_hash());
             return best;
         }
     }
@@ -223,5 +279,18 @@ int Search::alphaBeta(Position& pos, int alpha, int beta, int depth, int ply_fro
         }
     }
 
+    NodeKind kind;
+    if (best <= original_alpha) {
+        kind = NodeKind::UPPER_BOUND;
+    } else {
+        kind = NodeKind::EXACT;
+    }
+    TableEntry new_entry{ pos.get_zobrist_hash(), best_move, depth, best, kind};
+    table.set_entry(new_entry, pos.get_zobrist_hash());
+
     return best;
+}
+
+void Search::clear_table() {
+    table.clear();
 }

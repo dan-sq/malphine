@@ -36,6 +36,7 @@ struct Undo {
     uint8_t ply;
     uint8_t full_moves;
     PIECE_T captured = PIECE_T::NONE;
+    uint64_t zobrist_hash;
 };
 
 class Position {
@@ -47,7 +48,7 @@ class Position {
         uint8_t ply;
         uint8_t full_moves;
         std::vector<Undo> undos;
-        uint64_t zobrist_hash;
+        uint64_t zobrist_hash = 0;
 
     public:
         Position() : side(PIECE_C::WHITE), castle(0), en_pas(64), half_moves(0), full_moves(1), ply(0) {
@@ -71,7 +72,10 @@ class Position {
         uint8_t get_full_moves();
         uint8_t get_ply();
         Undo fetch_and_pop_undos();
+        Undo undo_top();
         void append_to_undos(Undo undo);
         uint64_t get_zobrist_hash();
-        void set_zobrist_hash(uint64_t hash);
+        void xor_hash(uint64_t key);
+        void set_hash(uint64_t);
+        void reset_hash();
 };

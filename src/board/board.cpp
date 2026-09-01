@@ -82,6 +82,10 @@ Undo Position::fetch_and_pop_undos() {
     return u;
 }
 
+Undo Position::undo_top() {
+    return undos.back();
+}
+
 void Position::append_to_undos(Undo undo) {
     this->undos.push_back(undo);
 }
@@ -121,4 +125,19 @@ uint64_t Pieces::get_both_pieces() const {
     }
 
     return res;
+}
+uint64_t Position::get_zobrist_hash() {
+    return this->zobrist_hash;
+}
+
+void Position::xor_hash(uint64_t key) {
+    this->zobrist_hash ^= key;
+}
+
+void Position::reset_hash() {
+    this->zobrist_hash = 0;
+}
+
+void Position::set_hash(uint64_t hash) {
+    this->zobrist_hash = hash;
 }

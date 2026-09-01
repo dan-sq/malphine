@@ -3,10 +3,16 @@
 #include "move/move.h"
 #include "tools/magics.h"
 #include "movegen/magic_constants.h"
+#include "transposition-table/zobrist.h"
 #include <cstdint>
 #include <vector>
 
-void Movegen::init_diagonal_cache() {
+namespace Movegen {
+    DiagonalCache diag_cache{};
+    HorizontalCache hori_cache{};
+}
+
+void Movegen::init() {
     for(int sq = 0; sq < 64; sq++) {
         auto moves_bb = Magics::sq_to_diag_move_bb(sq);
         auto ones_count = std::popcount(moves_bb);
@@ -24,6 +30,25 @@ void Movegen::init_diagonal_cache() {
             Movegen::diag_cache.moves[sq][magic_idx] = attack_bb;
         }
     }
+
+    for(int sq = 0; sq < 64; sq++) {
+        auto moves_bb = Magics::sq_to_hori_move_bb(sq);
+        auto ones_count = std::popcount(moves_bb);
+        auto table_size = static_cast<uint64_t>(1) << ones_count;
+        auto shift = 64 - ones_count;
+
+        Movegen::hori_cache.masks[sq] = moves_bb;
+        Movegen::hori_cache.shifts[sq] = shift;
+
+        uint64_t blocker_bb, attack_bb;
+        for(uint64_t idx = 0; idx < table_size; idx++) {
+            blocker_bb = Magics::bb_from_idx(idx, moves_bb);
+            attack_bb = Magics::generate_horizontal_moves(blocker_bb, sq);
+            auto magic_idx = (blocker_bb * Movegen::Constants::HORIZONTAL_MAGICS[sq]) >> Movegen::hori_cache.shifts[sq];
+            Movegen::hori_cache.moves[sq][magic_idx] = attack_bb;
+        }
+    }
+
 }
 
 uint8_t distance_from_files(uint8_t to, uint8_t from) {
@@ -119,26 +144,6 @@ bool Movegen::is_sq_attacked_by_color(Position& pos, uint8_t sq, PIECE_C color) 
     }
 
     return false;
-}
-
-void Movegen::init_horizontal_cache() {
-    for(int sq = 0; sq < 64; sq++) {
-        auto moves_bb = Magics::sq_to_hori_move_bb(sq);
-        auto ones_count = std::popcount(moves_bb);
-        auto table_size = static_cast<uint64_t>(1) << ones_count;
-        auto shift = 64 - ones_count;
-
-        Movegen::hori_cache.masks[sq] = moves_bb;
-        Movegen::hori_cache.shifts[sq] = shift;
-
-        uint64_t blocker_bb, attack_bb;
-        for(uint64_t idx = 0; idx < table_size; idx++) {
-            blocker_bb = Magics::bb_from_idx(idx, moves_bb);
-            attack_bb = Magics::generate_horizontal_moves(blocker_bb, sq);
-            auto magic_idx = (blocker_bb * Movegen::Constants::HORIZONTAL_MAGICS[sq]) >> Movegen::hori_cache.shifts[sq];
-            Movegen::hori_cache.moves[sq][magic_idx] = attack_bb;
-        }
-    }
 }
 
 template<Movegen::GenType type>
@@ -504,17 +509,31 @@ bool Movegen::make(Position& pos, Move move) {
     auto king_bb = pos.pieces.get_pieces(us, PIECE_T::KING);
     auto king_sq = std::countr_zero(king_bb);
 
-    bool ep = move.get_flags() == static_cast<int>(MOVE_FLAG::DBL_P_PUSH) ? 1 : 0;
+    bool ep = 0;
     auto cstl_perms = pos.get_castle();
     auto half_moves = pos.get_half_moves();
+    auto en_pas = pos.get_en_pas();
+
+    uint64_t z_hash = pos.get_zobrist_hash();
+    if (us == PIECE_C::WHITE) {
+        pos.xor_hash(Zobrist::white_keys[static_cast<int>(pt)][from_sq]);
+    } else if (us == PIECE_C::BLACK) {
+        pos.xor_hash(Zobrist::black_keys[static_cast<int>(pt)][from_sq]);
+    }
+    pos.xor_hash(Zobrist::cstl_keys[cstl_perms]);
+    if (en_pas < 64) {
+        auto ep_file = en_pas & 7;
+        pos.xor_hash(Zobrist::ep_keys[ep_file]);
+    }
 
     Undo undo = {
         .side = us,
-        .castle = pos.get_castle(),
-        .en_pas = pos.get_en_pas(),
+        .castle = cstl_perms,
+        .en_pas = en_pas,
         .half_moves = half_moves,
         .ply = pos.get_ply(),
-        .full_moves = pos.get_full_moves()
+        .full_moves = pos.get_full_moves(),
+        .zobrist_hash = z_hash
     };
 
     switch(static_cast<MOVE_FLAG>(move.get_flags())) {
@@ -526,10 +545,14 @@ bool Movegen::make(Position& pos, Move move) {
                 king_sq = std::countr_zero(pos.pieces.get_pieces(us, pt));
 
             if(us == PIECE_C::WHITE) {
+                pos.xor_hash(Zobrist::white_keys[static_cast<int>(pt)][to_sq]);
+
                 if(pt == PIECE_T::KING && from_sq == 4) cstl_perms &= ~(1 << 0 | 1 << 1);
                 if(pt == PIECE_T::ROOK && from_sq == 7) cstl_perms &= ~(1 << 0);
                 if(pt == PIECE_T::ROOK && from_sq == 0) cstl_perms &= ~(1 << 1);
             } else {
+                pos.xor_hash(Zobrist::black_keys[static_cast<int>(pt)][to_sq]);
+
                 if(pt == PIECE_T::KING && from_sq == 60) cstl_perms &= ~(1 << 2 | 1 << 3);
                 if(pt == PIECE_T::ROOK && from_sq == 63) cstl_perms &= ~(1 << 2);
                 if(pt == PIECE_T::ROOK && from_sq == 56) cstl_perms &= ~(1 << 3);
@@ -538,6 +561,7 @@ bool Movegen::make(Position& pos, Move move) {
             if(is_sq_attacked_by_color(pos, king_sq, enemy)) {
                 pos.pieces.remove_piece(us, pt, to_sq);
                 pos.pieces.set_piece(us, pt, from_sq);
+                pos.set_hash(z_hash);
 
                 return false;
             }
@@ -552,13 +576,21 @@ bool Movegen::make(Position& pos, Move move) {
             pos.pieces.remove_piece(us, pt, from_sq);
             pos.pieces.set_piece(us, pt, to_sq);
 
+            if (us == PIECE_C::WHITE) {
+                pos.xor_hash(Zobrist::white_keys[static_cast<int>(pt)][to_sq]);
+            } else if (us == PIECE_C::BLACK) {
+                pos.xor_hash(Zobrist::black_keys[static_cast<int>(pt)][to_sq]);
+            }
+
             if(is_sq_attacked_by_color(pos, king_sq, enemy)) {
                 pos.pieces.remove_piece(us, pt, to_sq);
                 pos.pieces.set_piece(us, pt, from_sq);
+                pos.set_hash(z_hash);
 
                 return false;
             }
 
+            ep = 1;
             half_moves = 0;
 
             break;
@@ -566,16 +598,22 @@ bool Movegen::make(Position& pos, Move move) {
             if(us == PIECE_C::WHITE) {
                 pos.pieces.remove_piece(us, pt, from_sq);
                 pos.pieces.set_piece(us, pt, to_sq);
+                pos.xor_hash(Zobrist::white_keys[static_cast<int>(pt)][to_sq]);
 
                 pos.pieces.remove_piece(us, PIECE_T::ROOK, 7);
                 pos.pieces.set_piece(us, PIECE_T::ROOK, 5);
+                pos.xor_hash(Zobrist::white_keys[static_cast<int>(PIECE_T::ROOK)][7]);
+                pos.xor_hash(Zobrist::white_keys[static_cast<int>(PIECE_T::ROOK)][5]);
                 cstl_perms &= ~(1 << 0 | 1 << 1);
             } else {
                 pos.pieces.remove_piece(us, pt, from_sq);
                 pos.pieces.set_piece(us, pt, to_sq);
+                pos.xor_hash(Zobrist::black_keys[static_cast<int>(pt)][to_sq]);
 
                 pos.pieces.remove_piece(us, PIECE_T::ROOK, 63);
                 pos.pieces.set_piece(us, PIECE_T::ROOK, 61);
+                pos.xor_hash(Zobrist::black_keys[static_cast<int>(PIECE_T::ROOK)][63]);
+                pos.xor_hash(Zobrist::black_keys[static_cast<int>(PIECE_T::ROOK)][61]);
                 cstl_perms &= ~(1 << 2 | 1 << 3);
             }
 
@@ -586,16 +624,22 @@ bool Movegen::make(Position& pos, Move move) {
             if(us == PIECE_C::WHITE) {
                 pos.pieces.remove_piece(us, pt, from_sq);
                 pos.pieces.set_piece(us, pt, to_sq);
+                pos.xor_hash(Zobrist::white_keys[static_cast<int>(pt)][to_sq]);
 
                 pos.pieces.remove_piece(us, PIECE_T::ROOK, 0);
                 pos.pieces.set_piece(us, PIECE_T::ROOK, 3);
+                pos.xor_hash(Zobrist::white_keys[static_cast<int>(PIECE_T::ROOK)][0]);
+                pos.xor_hash(Zobrist::white_keys[static_cast<int>(PIECE_T::ROOK)][3]);
                 cstl_perms &= ~(1 << 0 | 1 << 1);
             } else {
                 pos.pieces.remove_piece(us, pt, from_sq);
                 pos.pieces.set_piece(us, pt, to_sq);
+                pos.xor_hash(Zobrist::black_keys[static_cast<int>(pt)][to_sq]);
 
                 pos.pieces.remove_piece(us, PIECE_T::ROOK, 56);
                 pos.pieces.set_piece(us, PIECE_T::ROOK, 59);
+                pos.xor_hash(Zobrist::black_keys[static_cast<int>(PIECE_T::ROOK)][56]);
+                pos.xor_hash(Zobrist::black_keys[static_cast<int>(PIECE_T::ROOK)][59]);
                 cstl_perms &= ~(1 << 2 | 1 << 3);
             }
 
@@ -613,6 +657,9 @@ bool Movegen::make(Position& pos, Move move) {
                 king_sq = std::countr_zero(pos.pieces.get_pieces(us, pt));
 
             if(us == PIECE_C::WHITE) {
+                pos.xor_hash(Zobrist::white_keys[static_cast<int>(pt)][to_sq]);
+                pos.xor_hash(Zobrist::black_keys[static_cast<int>(to_capture)][to_sq]);
+
                 if(pt == PIECE_T::KING && from_sq == 4) cstl_perms &= ~(1 << 0 | 1 << 1);
 
                 if(pt == PIECE_T::ROOK && from_sq == 7) cstl_perms &= ~(1 << 0);
@@ -621,6 +668,9 @@ bool Movegen::make(Position& pos, Move move) {
                 if(to_capture == PIECE_T::ROOK && to_sq == 63) cstl_perms &= ~(1 << 2);
                 if(to_capture == PIECE_T::ROOK && to_sq == 56) cstl_perms &= ~(1 << 3);
             } else {
+                pos.xor_hash(Zobrist::black_keys[static_cast<int>(pt)][to_sq]);
+                pos.xor_hash(Zobrist::white_keys[static_cast<int>(to_capture)][to_sq]);
+
                 if(pt == PIECE_T::KING && from_sq == 60) cstl_perms &= ~(1 << 2 | 1 << 3);
 
                 if(pt == PIECE_T::ROOK && from_sq == 63) cstl_perms &= ~(1 << 2);
@@ -634,6 +684,7 @@ bool Movegen::make(Position& pos, Move move) {
                 pos.pieces.remove_piece(us, pt, to_sq);
                 pos.pieces.set_piece(us, pt, from_sq);
                 pos.pieces.set_piece(enemy, to_capture, to_sq);
+                pos.set_hash(z_hash);
 
                 return false;
             }
@@ -656,8 +707,12 @@ bool Movegen::make(Position& pos, Move move) {
             pos.pieces.remove_piece(us, pt, from_sq);
             if(us == PIECE_C::WHITE) {
                 pos.pieces.remove_piece(enemy, to_capture, to_sq - 8);
+                pos.xor_hash(Zobrist::white_keys[static_cast<int>(pt)][to_sq]);
+                pos.xor_hash(Zobrist::black_keys[static_cast<int>(to_capture)][to_sq - 8]);
             } else {
                 pos.pieces.remove_piece(enemy, to_capture, to_sq + 8);
+                pos.xor_hash(Zobrist::black_keys[static_cast<int>(pt)][to_sq]);
+                pos.xor_hash(Zobrist::white_keys[static_cast<int>(to_capture)][to_sq + 8]);
             }
 
             pos.pieces.set_piece(us, pt, to_sq);
@@ -668,9 +723,11 @@ bool Movegen::make(Position& pos, Move move) {
 
                 if(us == PIECE_C::WHITE) {
                     pos.pieces.set_piece(enemy, to_capture, to_sq - 8);
-                } else {
+                } else if (us == PIECE_C::BLACK) {
                     pos.pieces.set_piece(enemy, to_capture, to_sq + 8);
                 }
+
+                pos.set_hash(z_hash);
 
                 return false;
             }
@@ -683,9 +740,16 @@ bool Movegen::make(Position& pos, Move move) {
             pos.pieces.remove_piece(us, pt, from_sq);
             pos.pieces.set_piece(us, PIECE_T::KNIGHT, to_sq);
 
+            if (us == PIECE_C::WHITE) {
+                pos.xor_hash(Zobrist::white_keys[static_cast<int>(PIECE_T::KNIGHT)][to_sq]);
+            } else if (us == PIECE_C::BLACK) {
+                pos.xor_hash(Zobrist::black_keys[static_cast<int>(PIECE_T::KNIGHT)][to_sq]);
+            }
+
             if(is_sq_attacked_by_color(pos, king_sq, enemy)) {
                 pos.pieces.remove_piece(us, PIECE_T::KNIGHT, to_sq);
                 pos.pieces.set_piece(us, pt, from_sq);
+                pos.set_hash(z_hash);
 
                 return false;
             }
@@ -697,9 +761,16 @@ bool Movegen::make(Position& pos, Move move) {
             pos.pieces.remove_piece(us, pt, from_sq);
             pos.pieces.set_piece(us, PIECE_T::BISHOP, to_sq);
 
+            if (us == PIECE_C::WHITE) {
+                pos.xor_hash(Zobrist::white_keys[static_cast<int>(PIECE_T::BISHOP)][to_sq]);
+            } else if (us == PIECE_C::BLACK) {
+                pos.xor_hash(Zobrist::black_keys[static_cast<int>(PIECE_T::BISHOP)][to_sq]);
+            }
+
             if(is_sq_attacked_by_color(pos, king_sq, enemy)) {
                 pos.pieces.remove_piece(us, PIECE_T::BISHOP, to_sq);
                 pos.pieces.set_piece(us, pt, from_sq);
+                pos.set_hash(z_hash);
 
                 return false;
             }
@@ -711,9 +782,16 @@ bool Movegen::make(Position& pos, Move move) {
             pos.pieces.remove_piece(us, pt, from_sq);
             pos.pieces.set_piece(us, PIECE_T::ROOK, to_sq);
 
+            if (us == PIECE_C::WHITE) {
+                pos.xor_hash(Zobrist::white_keys[static_cast<int>(PIECE_T::ROOK)][to_sq]);
+            } else if (us == PIECE_C::BLACK) {
+                pos.xor_hash(Zobrist::black_keys[static_cast<int>(PIECE_T::ROOK)][to_sq]);
+            }
+
             if(is_sq_attacked_by_color(pos, king_sq, enemy)) {
                 pos.pieces.remove_piece(us, PIECE_T::ROOK, to_sq);
                 pos.pieces.set_piece(us, pt, from_sq);
+                pos.set_hash(z_hash);
 
                 return false;
             }
@@ -725,9 +803,16 @@ bool Movegen::make(Position& pos, Move move) {
             pos.pieces.remove_piece(us, pt, from_sq);
             pos.pieces.set_piece(us, PIECE_T::QUEEN, to_sq);
 
+            if (us == PIECE_C::WHITE) {
+                pos.xor_hash(Zobrist::white_keys[static_cast<int>(PIECE_T::QUEEN)][to_sq]);
+            } else if (us == PIECE_C::BLACK) {
+                pos.xor_hash(Zobrist::black_keys[static_cast<int>(PIECE_T::QUEEN)][to_sq]);
+            }
+
             if(is_sq_attacked_by_color(pos, king_sq, enemy)) {
                 pos.pieces.remove_piece(us, PIECE_T::QUEEN, to_sq);
                 pos.pieces.set_piece(us, pt, from_sq);
+                pos.set_hash(z_hash);
 
                 return false;
             }
@@ -744,9 +829,15 @@ bool Movegen::make(Position& pos, Move move) {
             pos.pieces.set_piece(us, PIECE_T::KNIGHT, to_sq);
 
             if(us == PIECE_C::WHITE) {
+                pos.xor_hash(Zobrist::black_keys[static_cast<int>(to_capture)][to_sq]);
+                pos.xor_hash(Zobrist::white_keys[static_cast<int>(PIECE_T::KNIGHT)][to_sq]);
+
                 if(to_capture == PIECE_T::ROOK && to_sq == 63) cstl_perms &= ~(1 << 2);
                 if(to_capture == PIECE_T::ROOK && to_sq == 56) cstl_perms &= ~(1 << 3);
-            } else {
+            } else if (us == PIECE_C::BLACK) {
+                pos.xor_hash(Zobrist::white_keys[static_cast<int>(to_capture)][to_sq]);
+                pos.xor_hash(Zobrist::black_keys[static_cast<int>(PIECE_T::KNIGHT)][to_sq]);
+
                 if(to_capture == PIECE_T::ROOK && to_sq == 7) cstl_perms &= ~(1 << 0);
                 if(to_capture == PIECE_T::ROOK && to_sq == 0) cstl_perms &= ~(1 << 1);
             }
@@ -755,6 +846,7 @@ bool Movegen::make(Position& pos, Move move) {
                 pos.pieces.remove_piece(us, PIECE_T::KNIGHT, to_sq);
                 pos.pieces.set_piece(enemy, to_capture, to_sq);
                 pos.pieces.set_piece(us, pt, from_sq);
+                pos.set_hash(z_hash);
 
                 return false;
             }
@@ -772,9 +864,15 @@ bool Movegen::make(Position& pos, Move move) {
             pos.pieces.set_piece(us, PIECE_T::BISHOP, to_sq);
 
             if(us == PIECE_C::WHITE) {
+                pos.xor_hash(Zobrist::black_keys[static_cast<int>(to_capture)][to_sq]);
+                pos.xor_hash(Zobrist::white_keys[static_cast<int>(PIECE_T::BISHOP)][to_sq]);
+
                 if(to_capture == PIECE_T::ROOK && to_sq == 63) cstl_perms &= ~(1 << 2);
                 if(to_capture == PIECE_T::ROOK && to_sq == 56) cstl_perms &= ~(1 << 3);
             } else {
+                pos.xor_hash(Zobrist::white_keys[static_cast<int>(to_capture)][to_sq]);
+                pos.xor_hash(Zobrist::black_keys[static_cast<int>(PIECE_T::BISHOP)][to_sq]);
+
                 if(to_capture == PIECE_T::ROOK && to_sq == 7) cstl_perms &= ~(1 << 0);
                 if(to_capture == PIECE_T::ROOK && to_sq == 0) cstl_perms &= ~(1 << 1);
             }
@@ -783,6 +881,7 @@ bool Movegen::make(Position& pos, Move move) {
                 pos.pieces.remove_piece(us, PIECE_T::BISHOP, to_sq);
                 pos.pieces.set_piece(enemy, to_capture, to_sq);
                 pos.pieces.set_piece(us, pt, from_sq);
+                pos.set_hash(z_hash);
 
                 return false;
             }
@@ -800,9 +899,15 @@ bool Movegen::make(Position& pos, Move move) {
             pos.pieces.set_piece(us, PIECE_T::ROOK, to_sq);
 
             if(us == PIECE_C::WHITE) {
+                pos.xor_hash(Zobrist::black_keys[static_cast<int>(to_capture)][to_sq]);
+                pos.xor_hash(Zobrist::white_keys[static_cast<int>(PIECE_T::ROOK)][to_sq]);
+
                 if(to_capture == PIECE_T::ROOK && to_sq == 63) cstl_perms &= ~(1 << 2);
                 if(to_capture == PIECE_T::ROOK && to_sq == 56) cstl_perms &= ~(1 << 3);
             } else {
+                pos.xor_hash(Zobrist::white_keys[static_cast<int>(to_capture)][to_sq]);
+                pos.xor_hash(Zobrist::black_keys[static_cast<int>(PIECE_T::ROOK)][to_sq]);
+
                 if(to_capture == PIECE_T::ROOK && to_sq == 7) cstl_perms &= ~(1 << 0);
                 if(to_capture == PIECE_T::ROOK && to_sq == 0) cstl_perms &= ~(1 << 1);
             }
@@ -811,6 +916,7 @@ bool Movegen::make(Position& pos, Move move) {
                 pos.pieces.remove_piece(us, PIECE_T::ROOK, to_sq);
                 pos.pieces.set_piece(enemy, to_capture, to_sq);
                 pos.pieces.set_piece(us, pt, from_sq);
+                pos.set_hash(z_hash);
 
                 return false;
             }
@@ -828,9 +934,15 @@ bool Movegen::make(Position& pos, Move move) {
             pos.pieces.set_piece(us, PIECE_T::QUEEN, to_sq);
 
             if(us == PIECE_C::WHITE) {
+                pos.xor_hash(Zobrist::black_keys[static_cast<int>(to_capture)][to_sq]);
+                pos.xor_hash(Zobrist::white_keys[static_cast<int>(PIECE_T::QUEEN)][to_sq]);
+
                 if(to_capture == PIECE_T::ROOK && to_sq == 63) cstl_perms &= ~(1 << 2);
                 if(to_capture == PIECE_T::ROOK && to_sq == 56) cstl_perms &= ~(1 << 3);
             } else {
+                pos.xor_hash(Zobrist::white_keys[static_cast<int>(to_capture)][to_sq]);
+                pos.xor_hash(Zobrist::black_keys[static_cast<int>(PIECE_T::QUEEN)][to_sq]);
+
                 if(to_capture == PIECE_T::ROOK && to_sq == 7) cstl_perms &= ~(1 << 0);
                 if(to_capture == PIECE_T::ROOK && to_sq == 0) cstl_perms &= ~(1 << 1);
             }
@@ -839,6 +951,7 @@ bool Movegen::make(Position& pos, Move move) {
                 pos.pieces.remove_piece(us, PIECE_T::QUEEN, to_sq);
                 pos.pieces.set_piece(enemy, to_capture, to_sq);
                 pos.pieces.set_piece(us, pt, from_sq);
+                pos.set_hash(z_hash);
 
                 return false;
             }
@@ -848,6 +961,8 @@ bool Movegen::make(Position& pos, Move move) {
             break;
         }
         default:
+            pos.set_hash(z_hash);
+
             return false;
     }
 
@@ -857,15 +972,24 @@ bool Movegen::make(Position& pos, Move move) {
         } else {
             pos.set_en_pas(to_sq + 8);
         }
+
+        auto ep_file = pos.get_en_pas() & 7;
+        pos.xor_hash(Zobrist::ep_keys[ep_file]);
     } else {
         pos.set_en_pas(64);
     }
-    if(us == PIECE_C::BLACK) pos.set_full_moves(pos.get_full_moves() + 1);
+
+    if(us == PIECE_C::BLACK)
+        pos.set_full_moves(pos.get_full_moves() + 1);
+
     pos.set_ply(pos.get_ply() + 1);
     pos.set_half_moves(half_moves);
     pos.set_castle(cstl_perms);
     pos.append_to_undos(undo);
     pos.set_side(enemy);
+
+    pos.xor_hash(Zobrist::side_key);
+    pos.xor_hash(Zobrist::cstl_keys[cstl_perms]);
 
     return true;
 }
@@ -878,6 +1002,7 @@ void Movegen::unmake(Position& pos, Move move) {
     pos.set_half_moves(undo.half_moves);
     pos.set_ply(undo.ply);
     pos.set_full_moves(undo.full_moves);
+    pos.set_hash(undo.zobrist_hash);
 
     PIECE_C us = pos.get_side();
     PIECE_C enemy = us == PIECE_C::WHITE ? PIECE_C::BLACK : PIECE_C::WHITE;
